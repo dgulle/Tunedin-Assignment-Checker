@@ -102,7 +102,8 @@ function Invoke-GraphPaginated {
             $response = Invoke-MgGraphRequest -Method GET -Uri $nextUri -OutputType PSObject
         }
         catch {
-            Write-Warning "Graph request failed for $nextUri : $_"
+            $safeUri = ($nextUri -split '\?')[0]
+            Write-Warning "Graph request failed for $safeUri : $($_.Exception.Message)"
             break
         }
 
@@ -186,6 +187,24 @@ function ConvertTo-SafeJson {
     return ($InputObject | ConvertTo-Json -Depth 10 -Compress)
 }
 
+function Set-SecurityHeaders {
+    <#
+    .SYNOPSIS
+        Adds standard security headers to an HTTP response.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [System.Net.HttpListenerResponse]$Response
+    )
+
+    $Response.Headers.Set("X-Content-Type-Options", "nosniff")
+    $Response.Headers.Set("X-Frame-Options", "DENY")
+    $Response.Headers.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+    $csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; " +
+           "connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    $Response.Headers.Set("Content-Security-Policy", $csp)
+}
+
 # -----------------------------------------------------------------------------
 # 5. Resolve static file paths
 # -----------------------------------------------------------------------------
@@ -252,6 +271,8 @@ try {
         $path = $req.Url.AbsolutePath
 
         try {
+            Set-SecurityHeaders -Response $resp
+
             # -- API: list groups ------------------------------------
             if ($path -eq "/api/groups" -and $req.HttpMethod -eq "GET") {
                 $groups = Get-AllGroups
@@ -264,7 +285,18 @@ try {
             }
             # -- API: group assignments ------------------------------
             elseif ($path -match "^/api/groups/([^/]+)/assignments$" -and $req.HttpMethod -eq "GET") {
-                $groupId     = $Matches[1]
+                $groupId    = $Matches[1]
+                $parsedGuid = [System.Guid]::Empty
+                if (-not [System.Guid]::TryParse($groupId, [ref]$parsedGuid)) {
+                    $resp.StatusCode = 400
+                    $body   = '{"error":"Invalid group ID format. Expected a valid GUID."}'
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                    continue
+                }
+                $groupId     = $parsedGuid.ToString()
                 $assignments = Get-AssignmentsForGroup -GroupId $groupId
                 $json        = ConvertTo-SafeJson -InputObject $assignments
                 $buffer      = [System.Text.Encoding]::UTF8.GetBytes($json)
@@ -322,8 +354,9 @@ try {
         catch {
             Write-Warning "Request error ($path): $_"
             try {
+                Set-SecurityHeaders -Response $resp
                 $resp.StatusCode = 500
-                $errBody = "{`"error`":`"$($_.Exception.Message -replace '"','\"')`"}"
+                $errBody = '{"error":"An internal error occurred. Please try again later."}'
                 $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
                 $resp.ContentType     = "application/json"
                 $resp.ContentLength64 = $buffer.Length

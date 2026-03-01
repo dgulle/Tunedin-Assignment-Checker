@@ -39,6 +39,7 @@
     loadGroups();
 
     groupSearch.addEventListener("input", () => renderGroupList());
+    document.getElementById("btnRetry").addEventListener("click", loadGroups);
 
     categoryTabs.addEventListener("click", (e) => {
         const tab = e.target.closest(".tab");
@@ -61,7 +62,7 @@
 
     // ── Load groups ─────────────────────────────────────────────────────
 
-    window.loadGroups = async function loadGroups() {
+    async function loadGroups() {
         sidebarLoading.style.display = "flex";
         sidebarError.style.display   = "none";
         groupList.innerHTML           = "";
@@ -72,13 +73,14 @@
             renderGroupList();
             setConnection("connected", "Connected");
         } catch (err) {
-            sidebarErrorMsg.textContent = err.message;
+            console.error("Failed to load groups:", err);
+            sidebarErrorMsg.textContent = "Failed to load groups. Please check your connection and try again.";
             sidebarError.style.display  = "flex";
             setConnection("error", "Disconnected");
         } finally {
             sidebarLoading.style.display = "none";
         }
-    };
+    }
 
     // ── Render group list (with search filter) ──────────────────────────
 
@@ -138,7 +140,8 @@
             renderCards();
             showPanel("assignments");
         } catch (err) {
-            contentErrorMsg.textContent = err.message;
+            console.error("Failed to load assignments:", err);
+            contentErrorMsg.textContent = "Failed to load assignments. Please check your connection and try again.";
             showPanel("error");
         }
     }
