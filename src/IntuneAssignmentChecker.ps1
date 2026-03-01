@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Intune Assignment Checker — interactive web dashboard for Intune group assignments.
+    Intune Assignment Checker - interactive web dashboard for Intune group assignments.
 
 .DESCRIPTION
     This script:
@@ -25,9 +25,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # 1. Ensure the Microsoft Graph Authentication module is available
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 $moduleName = "Microsoft.Graph.Authentication"
 
@@ -47,9 +47,9 @@ if (-not (Get-Module -ListAvailable -Name $moduleName)) {
 
 Import-Module $moduleName -ErrorAction Stop
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # 2. Connect to Microsoft Graph with required scopes (interactive sign-in)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 $requiredScopes = @(
     "DeviceManagementConfiguration.Read.All"
@@ -60,13 +60,13 @@ $requiredScopes = @(
 )
 
 Write-Host ""
-Write-Host "  ┌──────────────────────────────────────────────────┐" -ForegroundColor Magenta
-Write-Host "  │       Intune Assignment Checker                  │" -ForegroundColor Magenta
-Write-Host "  │                                                  │" -ForegroundColor Magenta
-Write-Host "  │  A browser window will open for sign-in.         │" -ForegroundColor Magenta
-Write-Host "  │  Sign in with your Entra ID credentials and      │" -ForegroundColor Magenta
-Write-Host "  │  accept the requested permissions.               │" -ForegroundColor Magenta
-Write-Host "  └──────────────────────────────────────────────────┘" -ForegroundColor Magenta
+Write-Host "  ======================================================" -ForegroundColor Magenta
+Write-Host "         Intune Assignment Checker                      " -ForegroundColor Magenta
+Write-Host "  ======================================================" -ForegroundColor Magenta
+Write-Host "  A browser window will open for sign-in.               " -ForegroundColor Magenta
+Write-Host "  Sign in with your Entra ID credentials and            " -ForegroundColor Magenta
+Write-Host "  accept the requested permissions.                     " -ForegroundColor Magenta
+Write-Host "  ======================================================" -ForegroundColor Magenta
 Write-Host ""
 
 try {
@@ -81,9 +81,9 @@ catch {
     exit 1
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # 3. Graph API helper functions
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 function Invoke-GraphPaginated {
     <#
@@ -177,18 +177,18 @@ function Get-AssignmentsForGroup {
     return $result
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # 4. JSON serialization helper
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 function ConvertTo-SafeJson {
     param($InputObject)
     return ($InputObject | ConvertTo-Json -Depth 10 -Compress)
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # 5. Resolve static file paths
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 $scriptDir = $PSScriptRoot
 if (-not $scriptDir) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition }
@@ -206,9 +206,9 @@ $mimeTypes = @{
     ".ico"  = "image/x-icon"
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # 6. Start the HTTP listener
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 $listener = New-Object System.Net.HttpListener
 $prefix   = "http://localhost:$Port/"
@@ -222,10 +222,10 @@ catch {
     exit 1
 }
 
-Write-Host "  ┌──────────────────────────────────────────────────┐" -ForegroundColor Cyan
-Write-Host "  │  Web server running at http://localhost:$Port     │" -ForegroundColor Cyan
-Write-Host "  │  Press Ctrl+C to stop.                           │" -ForegroundColor Cyan
-Write-Host "  └──────────────────────────────────────────────────┘" -ForegroundColor Cyan
+Write-Host "  ======================================================" -ForegroundColor Cyan
+Write-Host "  Web server running at http://localhost:$Port          " -ForegroundColor Cyan
+Write-Host "  Press Ctrl+C to stop.                                " -ForegroundColor Cyan
+Write-Host "  ======================================================" -ForegroundColor Cyan
 Write-Host ""
 
 # Open default browser
@@ -236,9 +236,9 @@ catch {
     Write-Host "  Open http://localhost:$Port in your browser." -ForegroundColor Yellow
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # 7. Request loop
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 try {
     while ($listener.IsListening) {
@@ -252,7 +252,7 @@ try {
         $path = $req.Url.AbsolutePath
 
         try {
-            # ── API: list groups ─────────────────────────────────
+            # -- API: list groups ------------------------------------
             if ($path -eq "/api/groups" -and $req.HttpMethod -eq "GET") {
                 $groups = Get-AllGroups
                 $json   = ConvertTo-SafeJson -InputObject $groups
@@ -262,7 +262,7 @@ try {
                 $resp.StatusCode      = 200
                 $resp.OutputStream.Write($buffer, 0, $buffer.Length)
             }
-            # ── API: group assignments ───────────────────────────
+            # -- API: group assignments ------------------------------
             elseif ($path -match "^/api/groups/([^/]+)/assignments$" -and $req.HttpMethod -eq "GET") {
                 $groupId     = $Matches[1]
                 $assignments = Get-AssignmentsForGroup -GroupId $groupId
@@ -273,7 +273,7 @@ try {
                 $resp.StatusCode      = 200
                 $resp.OutputStream.Write($buffer, 0, $buffer.Length)
             }
-            # ── Serve index.html ─────────────────────────────────
+            # -- Serve index.html ------------------------------------
             elseif ($path -eq "/" -or $path -eq "/index.html") {
                 $filePath = Join-Path $templateRoot "index.html"
                 if (Test-Path $filePath) {
@@ -287,7 +287,7 @@ try {
                     $resp.StatusCode = 404
                 }
             }
-            # ── Serve static files ───────────────────────────────
+            # -- Serve static files ----------------------------------
             elseif ($path.StartsWith("/static/")) {
                 $relativePath = $path.Substring("/static/".Length).Replace("/", [System.IO.Path]::DirectorySeparatorChar)
                 $filePath     = Join-Path $staticRoot $relativePath
@@ -309,7 +309,7 @@ try {
                     $resp.StatusCode = 404
                 }
             }
-            # ── 404 ──────────────────────────────────────────────
+            # -- 404 ------------------------------------------------
             else {
                 $resp.StatusCode = 404
                 $body   = '{"error":"Not found"}'
@@ -339,8 +339,10 @@ try {
 finally {
     Write-Host ""
     Write-Host "  Shutting down..." -ForegroundColor Yellow
-    $listener.Stop()
-    $listener.Close()
+    if ($null -ne (Get-Variable -Name listener -ValueOnly -ErrorAction SilentlyContinue)) {
+        try { $listener.Stop() } catch { }
+        try { $listener.Close() } catch { }
+    }
     Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
     Write-Host "  Disconnected from Microsoft Graph. Goodbye!" -ForegroundColor Green
 }
