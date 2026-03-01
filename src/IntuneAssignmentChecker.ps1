@@ -120,8 +120,11 @@ function Invoke-GraphPaginated {
 }
 
 function Get-AllGroups {
-    $uri = "/v1.0/groups?`$select=id,displayName,description,groupTypes,membershipRule&`$orderby=displayName&`$top=999"
+    # Note: $orderby on /groups requires ConsistencyLevel:eventual + $count=true
+    # which complicates pagination. Sort client-side instead.
+    $uri = "/v1.0/groups?`$select=id,displayName,description,groupTypes,membershipRule&`$top=999"
     $groups = Invoke-GraphPaginated -Uri $uri
+    $groups = $groups | Sort-Object { $_.displayName }
     return @(,$groups)
 }
 
