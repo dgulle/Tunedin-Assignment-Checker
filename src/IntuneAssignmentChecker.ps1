@@ -113,7 +113,15 @@ function Invoke-GraphPaginated {
             $response.value | ForEach-Object { [void]$all.Add($_) }
         }
 
-        $nextUri = $response.'@odata.nextLink'
+        # Safely check for next page link — the property may not exist
+        # on the response object depending on output type and PS version.
+        if ($response -is [hashtable]) {
+            $nextUri = $response['@odata.nextLink']
+        } elseif ($response.PSObject.Properties.Match('@odata.nextLink').Count) {
+            $nextUri = $response.'@odata.nextLink'
+        } else {
+            $nextUri = $null
+        }
     }
 
     return @(,$all.ToArray())
