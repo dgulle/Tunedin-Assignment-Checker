@@ -91,10 +91,11 @@ function Invoke-GraphPaginated {
         Fetches all pages from a Microsoft Graph endpoint.
     #>
     param(
-        [Parameter(Mandatory)][string]$Uri
+        [Parameter(Mandatory)][string]$Uri,
+        [switch]$SilentErrors
     )
 
-    $all = @()
+    $all = [System.Collections.ArrayList]::new()
     $nextUri = $Uri
 
     while ($nextUri) {
@@ -104,22 +105,24 @@ function Invoke-GraphPaginated {
         catch {
             $safeUri = ($nextUri -split '\?')[0]
             Write-Warning "Graph request failed for $safeUri : $($_.Exception.Message)"
-            break
+            if ($SilentErrors) { break }
+            throw
         }
 
         if ($response.value) {
-            $all += $response.value
+            $response.value | ForEach-Object { [void]$all.Add($_) }
         }
 
         $nextUri = $response.'@odata.nextLink'
     }
 
-    return $all
+    return @(,$all.ToArray())
 }
 
 function Get-AllGroups {
     $uri = "/v1.0/groups?`$select=id,displayName,description,groupTypes,membershipRule&`$orderby=displayName&`$top=999"
-    return Invoke-GraphPaginated -Uri $uri
+    $groups = Invoke-GraphPaginated -Uri $uri
+    return @(,$groups)
 }
 
 function Get-AssignmentsForGroup {
@@ -136,8 +139,8 @@ function Get-AssignmentsForGroup {
     $result = @{}
 
     foreach ($cat in $categories.GetEnumerator()) {
-        $items = Invoke-GraphPaginated -Uri $cat.Value
-        $matched = @()
+        $items = Invoke-GraphPaginated -Uri $cat.Value -SilentErrors
+        $matched = [System.Collections.ArrayList]::new()
 
         foreach ($item in $items) {
             if (-not $item.assignments) { continue }
@@ -158,7 +161,7 @@ function Get-AssignmentsForGroup {
 
                     $displayName = if ($item.displayName) { $item.displayName } elseif ($item.name) { $item.name } else { "N/A" }
 
-                    $matched += @{
+                    [void]$matched.Add(@{
                         id              = $item.id
                         displayName     = $displayName
                         description     = if ($item.description) { $item.description } else { "" }
@@ -166,13 +169,13 @@ function Get-AssignmentsForGroup {
                         intent          = if ($assignment.intent) { $assignment.intent } else { "" }
                         filterId        = if ($target.deviceAndAppManagementAssignmentFilterId) { $target.deviceAndAppManagementAssignmentFilterId } else { "" }
                         filterType      = if ($target.deviceAndAppManagementAssignmentFilterType) { $target.deviceAndAppManagementAssignmentFilterType } else { "" }
-                    }
+                    })
                     break   # one match per item is enough
                 }
             }
         }
 
-        $result[$cat.Key] = $matched
+        $result[$cat.Key] = @($matched.ToArray())
     }
 
     return $result
@@ -184,7 +187,13 @@ function Get-AssignmentsForGroup {
 
 function ConvertTo-SafeJson {
     param($InputObject)
-    return ($InputObject | ConvertTo-Json -Depth 10 -Compress)
+    # Use -InputObject (not pipeline) to preserve arrays.
+    # Pipeline unwraps single-element arrays into bare objects and
+    # produces empty output for @(), both of which break JSON consumers.
+    if ($null -eq $InputObject) {
+        return "null"
+    }
+    return (ConvertTo-Json -InputObject $InputObject -Depth 10 -Compress)
 }
 
 function Set-SecurityHeaders {
@@ -275,7 +284,7 @@ try {
 
             # -- API: list groups ------------------------------------
             if ($path -eq "/api/groups" -and $req.HttpMethod -eq "GET") {
-                $groups = Get-AllGroups
+                $groups = @(Get-AllGroups)
                 $json   = ConvertTo-SafeJson -InputObject $groups
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
                 $resp.ContentType     = "application/json; charset=utf-8"
