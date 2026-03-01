@@ -1,9 +1,10 @@
 # Intune Assignment Checker
 
-A web-based tool that connects to Microsoft Intune via the Microsoft Graph API and displays policy and application assignments for Entra ID (Azure AD) groups.
+A PowerShell-based web dashboard that connects to Microsoft Intune via the Microsoft Graph API and displays policy and application assignments for Entra ID groups. No app registrations, client secrets, or manual Azure portal setup required — just run the script and sign in.
 
 ## Features
 
+- **Zero configuration** — no app registrations or secrets to manage; permissions are requested automatically at sign-in
 - Browse all Entra ID groups in a searchable sidebar
 - View Intune assignments per group across five categories:
   - **Device Configurations** — Configuration profiles
@@ -11,72 +12,90 @@ A web-based tool that connects to Microsoft Intune via the Microsoft Graph API a
   - **Applications** — Assigned apps (required, available, uninstall)
   - **Scripts** — PowerShell device management scripts
   - **Remediations** — Proactive remediation (health) scripts
-- See assignment type (Include / Exclude) and filter information
+- See assignment type (Include / Exclude) and assignment filter information
 - Responsive design that works on desktop and tablet
 
 ## Prerequisites
 
-1. **Python 3.9+**
-2. **Azure AD App Registration** with the following **Application** permissions:
-   - `DeviceManagementApps.Read.All`
-   - `DeviceManagementConfiguration.Read.All`
-   - `DeviceManagementManagedDevices.Read.All`
-   - `Group.Read.All`
-   - `User.Read.All`
-3. Admin consent granted for the above permissions
+- **PowerShell 5.1+** (Windows PowerShell) or **PowerShell 7+** (cross-platform)
+- An Entra ID account with sufficient privileges to read Intune configuration and group data
+- The ability to consent to (or have an admin pre-consent) the following Microsoft Graph scopes:
+  - `DeviceManagementApps.Read.All`
+  - `DeviceManagementConfiguration.Read.All`
+  - `DeviceManagementManagedDevices.Read.All`
+  - `Group.Read.All`
+  - `User.Read.All`
+
+> The script installs the `Microsoft.Graph.Authentication` module automatically if it is not already present.
 
 ## Quick Start
 
-```bash
+```powershell
 # Clone the repository
 git clone https://github.com/<your-org>/Intune-Assignment-Checker.git
 cd Intune-Assignment-Checker/src
 
-# Create a virtual environment & install dependencies
-python -m venv venv
-source venv/bin/activate      # Linux / macOS
-# venv\Scripts\activate       # Windows
-pip install -r requirements.txt
-
-# Configure credentials
-cp .env.example .env
-# Edit .env and fill in your Azure AD tenant ID, client ID, and client secret
-
-# Run the app
-python app.py
+# Run the script
+.\IntuneAssignmentChecker.ps1
 ```
 
-Open your browser to **http://localhost:5000**.
+The script will:
 
-## Configuration
+1. Install the `Microsoft.Graph.Authentication` module (first run only).
+2. Open a browser window for interactive Entra ID sign-in.
+3. Request the required Graph permissions (consent prompt).
+4. Start a local web server on **http://localhost:8080** and open it in your default browser.
 
-| Variable | Description |
-|---|---|
-| `AZURE_TENANT_ID` | Azure AD tenant ID |
-| `AZURE_CLIENT_ID` | App registration client / application ID |
-| `AZURE_CLIENT_SECRET` | App registration client secret |
-| `PORT` | Web server port (default `5000`) |
-| `FLASK_DEBUG` | Set to `true` for development hot-reload |
+### Custom Port
+
+```powershell
+.\IntuneAssignmentChecker.ps1 -Port 9090
+```
+
+## How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Browser (http://localhost:8080)                                │
+│  ┌──────────────┐  ┌────────────────────────────────────────┐  │
+│  │ Entra Groups  │  │  Configurations | Settings Catalog |  │  │
+│  │ (sidebar)     │  │  Applications   | Scripts          |  │  │
+│  │               │  │  Remediations                       |  │  │
+│  └──────────────┘  └────────────────────────────────────────┘  │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ /api/groups
+                            │ /api/groups/{id}/assignments
+                            ▼
+┌───────────────────────────────────────┐
+│  PowerShell HTTP Listener             │
+│  IntuneAssignmentChecker.ps1          │
+│  (serves UI + proxies Graph calls)    │
+└───────────────────────┬───────────────┘
+                        │ Invoke-MgGraphRequest
+                        ▼
+┌───────────────────────────────────────┐
+│  Microsoft Graph API (beta)           │
+│  graph.microsoft.com                  │
+└───────────────────────────────────────┘
+```
 
 ## Project Structure
 
 ```
 src/
-├── app.py              # Flask web server & API routes
-├── graph_client.py     # Microsoft Graph API client
-├── requirements.txt    # Python dependencies
-├── .env.example        # Environment variable template
+├── IntuneAssignmentChecker.ps1   # Main script (auth, HTTP server, Graph queries)
 ├── static/
 │   ├── css/
-│   │   └── style.css   # UI theme (base color #6969e9)
+│   │   └── style.css             # UI theme (base color #6969e9)
 │   └── js/
-│       └── app.js      # Frontend logic
+│       └── app.js                # Frontend logic
 └── templates/
-    └── index.html      # Single-page application template
+    └── index.html                # Single-page application template
 ```
 
 ## Security Notes
 
-- Never commit your `.env` file or any client secrets
-- The app uses **client credentials flow** (application permissions) — keep the secret secure
+- Authentication uses **interactive delegated flow** — no secrets are stored anywhere
+- The script only requests **read** permissions; it cannot modify your Intune environment
 - All Intune and Entra data should be treated as sensitive
+- Press **Ctrl+C** to stop the server; the script disconnects from Microsoft Graph automatically
