@@ -1,8 +1,22 @@
 # Environment / Secrets
 .env
+.env.*
+.env.local
+.env.*.local
 *.pem
 *.pfx
 *.key
+
+# PowerShell / Credentials
+*.clixml
+*.credential
+*.token
+*.secret
+secrets/
+config.json
+credentials.json
+*-secret.json
+*-credentials.json
 
 # IDE
 .vscode/
