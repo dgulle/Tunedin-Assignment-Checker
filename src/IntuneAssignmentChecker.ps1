@@ -124,16 +124,20 @@ function Invoke-GraphPaginated {
         }
     }
 
-    return @(,$all.ToArray())
+    # Return items through the pipeline individually.
+    # Callers should use @() to collect results into an array.
+    $all.ToArray()
 }
 
 function Get-AllGroups {
     # Note: $orderby on /groups requires ConsistencyLevel:eventual + $count=true
     # which complicates pagination. Sort client-side instead.
     $uri = "/v1.0/groups?`$select=id,displayName,description,groupTypes,membershipRule&`$top=999"
-    $groups = Invoke-GraphPaginated -Uri $uri
-    $groups = $groups | Sort-Object { $_.displayName }
-    return @(,$groups)
+    $groups = @(Invoke-GraphPaginated -Uri $uri)
+    if ($groups.Count -gt 0) {
+        $groups = @($groups | Sort-Object { $_.displayName })
+    }
+    $groups
 }
 
 function Get-AssignmentsForGroup {
@@ -197,13 +201,22 @@ function Get-AssignmentsForGroup {
 # -----------------------------------------------------------------------------
 
 function ConvertTo-SafeJson {
-    param($InputObject)
-    # Use -InputObject (not pipeline) to preserve arrays.
-    # Pipeline unwraps single-element arrays into bare objects and
-    # produces empty output for @(), both of which break JSON consumers.
-    if ($null -eq $InputObject) {
-        return "null"
+    param($InputObject, [switch]$AsArray)
+
+    # -AsArray: guarantee the output is always a JSON array, regardless
+    # of PowerShell's array-unwrapping quirks (0 items → "[]",
+    # 1 item → "[{…}]", N items → "[{…},{…},…]").
+    if ($AsArray) {
+        if ($null -eq $InputObject) { return "[]" }
+        $arr = @($InputObject)
+        if ($arr.Count -eq 0) { return "[]" }
+        $json = ConvertTo-Json -InputObject $arr -Depth 10 -Compress
+        # Guard: some PS versions still unwrap single-element arrays
+        if ($json[0] -ne '[') { $json = "[$json]" }
+        return $json
     }
+
+    if ($null -eq $InputObject) { return "null" }
     return (ConvertTo-Json -InputObject $InputObject -Depth 10 -Compress)
 }
 
@@ -296,7 +309,7 @@ try {
             # -- API: list groups ------------------------------------
             if ($path -eq "/api/groups" -and $req.HttpMethod -eq "GET") {
                 $groups = @(Get-AllGroups)
-                $json   = ConvertTo-SafeJson -InputObject $groups
+                $json   = ConvertTo-SafeJson -InputObject $groups -AsArray
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
                 $resp.ContentType     = "application/json; charset=utf-8"
                 $resp.ContentLength64 = $buffer.Length
