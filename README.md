@@ -6,6 +6,8 @@ A web dashboard that connects to Microsoft Intune via the Microsoft Graph API an
 
 - Browse all Entra ID groups in a searchable sidebar
 - Filter to show only groups that have Intune assignments
+- **Assignment count per group** — each group displays the total number of directly-targeted assignments (excludes All Devices/All Users)
+- **Assignment count range filter** — filter the group list by assignment count (e.g. show only groups with 1–10 assignments)
 - View Intune assignments per group across five categories:
   - **Device Configurations** — Configuration profiles
   - **Settings Catalog** — Settings Catalog policies
@@ -13,7 +15,11 @@ A web dashboard that connects to Microsoft Intune via the Microsoft Graph API an
   - **Scripts** — PowerShell device management scripts (with content preview)
   - **Remediations** — Proactive remediation (health) scripts
 - See assignment type (Include / Exclude / All Users / All Devices) and filter information
+- **Show/Hide All Devices & All Users** — global toggle buttons in the header to show or hide All Devices and All Users assignments across all groups, reducing clutter in large tenants
+- **Export to CSV** — download all assignments for the selected group as a CSV file for offline review or troubleshooting
 - Direct deep links to policies and apps in the Intune portal
+- **Tenant switching** — change Tenant ID and Client ID without needing to clear your browser history
+- **Resilient Graph API handling** — automatic retry with exponential backoff on throttling (HTTP 429) and transient server errors (HTTP 5xx); partial results are shown if individual categories fail
 - Dark mode with system preference detection
 - Responsive design for desktop, tablet, and mobile
 
@@ -90,6 +96,8 @@ Use the app directly from [https://dgulle.github.io/Intune-Assignment-Checker/](
 4. Sign in with your Entra ID account and consent to the permissions if prompted
 5. Your Client ID and Tenant ID are saved in your browser's local storage, so you won't need to re-enter them next time
 
+> **Switching tenants:** To connect to a different tenant, click **Sign out**, update the Tenant ID and Client ID on the setup screen, and sign in again. The app automatically resets the authentication session when it detects changed credentials — no need to clear browser history.
+
 > If you self-host the app on a different domain, update the Redirect URI in your app registration to match.
 
 ## How It Works
@@ -154,12 +162,16 @@ src/
 ├── IntuneAssignmentChecker.ps1   # PowerShell backend (auth, HTTP server, Graph queries)
 ├── static/
 │   ├── css/
-│   │   └── style.css             # UI theme and setup screen styles
+│   │   └── style.css             # UI theme and layout styles
+│   ├── img/
+│   │   └── logo.svg              # Shield logo
 │   └── js/
 │       ├── app.js                # Frontend logic (dual-mode: backend + SPA)
 │       └── graph.js              # MSAL.js auth and Graph API client (SPA mode)
 └── templates/
-    └── index.html                # Single-page application template
+    └── index.html                # Single-page application template (backend mode)
+
+index.html                        # Root HTML entry point (GitHub Pages / SPA mode)
 ```
 
 ## Permissions
@@ -176,6 +188,14 @@ Both modes require the same Microsoft Graph **delegated** permissions:
 | `User.Read.All` | Read user information for sign-in context |
 
 All permissions are **read-only**. The app cannot modify your Intune environment.
+
+## Large Tenant Support
+
+For tenants with thousands of groups (6,000+), the app includes:
+
+- **Automatic retry** — Graph API requests that fail with HTTP 429 (throttled) or 5xx (server error) are automatically retried up to 3 times with exponential backoff (2s, 4s, 8s). The `Retry-After` header is respected when present.
+- **Partial results** — if one category (e.g. Applications) fails after retries, the other four categories still display their results. The failed category's tab shows `!` and an error banner explains the issue. Re-selecting the group retries the fetch.
+- **Assignment count filter** — quickly narrow down the group list using the min/max assignment count filter to find the groups you care about.
 
 ## Security Notes
 
