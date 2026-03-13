@@ -101,20 +101,25 @@
             // Backend not available
         }
 
-        // SPA mode — check if we have saved config
+        // SPA mode
         appMode = "spa";
         var savedClientId = localStorage.getItem("iac_clientId");
         var savedTenantId = localStorage.getItem("iac_tenantId");
 
         if (savedClientId && savedTenantId) {
-            // Init MSAL and try to handle redirect / silent auth
-            await GraphClient.init(savedClientId, savedTenantId);
-            var account = await GraphClient.handleRedirect();
-            if (account) {
-                showApp();
-                setConnection("connected", account.username || "Connected");
-                loadGroups();
-                return;
+            try {
+                // Init MSAL and try to handle redirect callback
+                await GraphClient.init(savedClientId, savedTenantId);
+                var account = await GraphClient.handleRedirect();
+                if (account) {
+                    showApp();
+                    setConnection("connected", account.username || "Connected");
+                    loadGroups();
+                    return;
+                }
+            } catch (err) {
+                console.error("MSAL init/redirect error:", err);
+                // Fall through to show setup screen
             }
         }
 
@@ -138,7 +143,9 @@
         // Pre-initialise MSAL if we have both values, so it's ready when
         // the user clicks "Sign in" (avoids async work in click handler)
         if (savedClientId && savedTenantId && !GraphClient.isInitialised()) {
-            GraphClient.init(savedClientId, savedTenantId);
+            GraphClient.init(savedClientId, savedTenantId).catch(function (err) {
+                console.warn("MSAL pre-init failed (will retry on sign-in):", err);
+            });
         }
     }
 
