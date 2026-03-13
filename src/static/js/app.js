@@ -418,8 +418,19 @@
             showPanel("assignments");
         } catch (err) {
             console.error("Failed to load assignments:", err);
-            contentErrorMsg.textContent = err.message || "Failed to load assignments.";
-            showPanel("error");
+            // Try to show partial results if we got any data at all
+            if (assignmentData) {
+                selectedGroupName.textContent = group.displayName || "Unnamed Group";
+                selectedGroupDesc.textContent = group.description || "";
+                updateCounts();
+                activeCategory = getFirstNonEmptyCategory() || "configurations";
+                highlightTab();
+                renderCards();
+                showPanel("assignments");
+            } else {
+                contentErrorMsg.textContent = err.message || "Failed to load assignments.";
+                showPanel("error");
+            }
         }
     }
 
@@ -453,9 +464,18 @@
 
     function updateCounts() {
         if (!assignmentData) return;
+        var errors = assignmentData._errors || {};
         CATEGORIES.forEach(function (c) {
             var el = document.getElementById(c.countId);
-            if (el) el.textContent = getFilteredItems(c.key).length;
+            if (el) {
+                if (errors[c.key]) {
+                    el.textContent = "!";
+                    el.title = "Failed to load — click to retry";
+                } else {
+                    el.textContent = getFilteredItems(c.key).length;
+                    el.title = "";
+                }
+            }
         });
     }
 
@@ -498,12 +518,27 @@
     function renderCards() {
         if (!assignmentData) return;
 
+        var errors = assignmentData._errors || {};
+        var categoryError = errors[activeCategory];
         var items = getFilteredItems(activeCategory);
         cardGrid.innerHTML = "";
 
+        // Show error banner if this category failed
+        var existingBanner = document.getElementById("categoryErrorBanner");
+        if (existingBanner) existingBanner.remove();
+
+        if (categoryError) {
+            var banner = document.createElement("div");
+            banner.id = "categoryErrorBanner";
+            banner.className = "category-error-banner";
+            banner.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+                '<span>Failed to load this category. The Graph API returned an error — this is usually temporary. Try selecting the group again.</span>';
+            cardGrid.parentNode.insertBefore(banner, cardGrid);
+        }
+
         if (items.length === 0) {
             cardGrid.style.display     = "none";
-            categoryEmpty.style.display = "flex";
+            categoryEmpty.style.display = categoryError ? "none" : "flex";
             return;
         }
 

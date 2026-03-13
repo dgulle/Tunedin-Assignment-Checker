@@ -186,11 +186,20 @@ function Get-AssignmentsForGroup {
         remediations    = "/beta/deviceManagement/deviceHealthScripts?`$expand=assignments"
     }
 
-    $result = @{}
+    $result  = @{}
+    $_errors = @{}
 
     foreach ($cat in $categories.GetEnumerator()) {
-        $items = Invoke-GraphPaginated -Uri $cat.Value -SilentErrors
         $matched = [System.Collections.ArrayList]::new()
+        try {
+            $items = @(Invoke-GraphPaginated -Uri $cat.Value)
+        }
+        catch {
+            Write-Warning "Category $($cat.Key) failed: $($_.Exception.Message)"
+            $_errors[$cat.Key] = $_.Exception.Message
+            $result[$cat.Key]  = @()
+            continue
+        }
 
         foreach ($item in $items) {
             $itemAssignments = Get-SafeValue $item 'assignments'
@@ -201,8 +210,14 @@ function Get-AssignmentsForGroup {
                 if (-not $target) { continue }
 
                 $targetGroupId = Get-SafeValue $target 'groupId'
-                if ($targetGroupId -eq $GroupId) {
-                    $targetType = Get-SafeValue $target '@odata.type'
+                $targetType    = Get-SafeValue $target '@odata.type'
+
+                # Match: group assignment to this group, OR All Devices, OR All Users
+                $isGroupMatch     = ($targetGroupId -eq $GroupId)
+                $isAllDevices     = ($targetType -eq '#microsoft.graph.allDevicesAssignmentTarget')
+                $isAllUsers       = ($targetType -eq '#microsoft.graph.allLicensedUsersAssignmentTarget')
+
+                if ($isGroupMatch -or $isAllDevices -or $isAllUsers) {
                     $friendly = switch ($targetType) {
                         "#microsoft.graph.groupAssignmentTarget"            { "Include" }
                         "#microsoft.graph.exclusionGroupAssignmentTarget"   { "Exclude" }
@@ -228,7 +243,7 @@ function Get-AssignmentsForGroup {
                         filterId        = if ($filterId) { $filterId } else { "" }
                         filterType      = if ($filterType) { $filterType } else { "" }
                     })
-                    break   # one match per item is enough
+                    # Don't break — same item may match as both group + All Devices/Users
                 }
             }
         }
@@ -236,6 +251,7 @@ function Get-AssignmentsForGroup {
         $result[$cat.Key] = @($matched.ToArray())
     }
 
+    $result['_errors'] = $_errors
     return $result
 }
 
