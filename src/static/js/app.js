@@ -40,6 +40,7 @@
 
     groupSearch.addEventListener("input", () => renderGroupList());
     document.getElementById("btnRetry").addEventListener("click", loadGroups);
+    document.getElementById("btnLogout").addEventListener("click", logout);
 
     categoryTabs.addEventListener("click", (e) => {
         const tab = e.target.closest(".tab");
@@ -237,6 +238,34 @@
     function setConnection(state, text) {
         badgeDot.className = "badge-dot " + state;
         badgeText.textContent = text;
+    }
+
+    // ── Logout ────────────────────────────────────────────────────────
+
+    async function logout() {
+        if (!confirm("Sign out from Microsoft Graph? You will need to restart the script to sign in again.")) {
+            return;
+        }
+
+        try {
+            const resp = await fetch("/api/logout", { method: "POST" });
+            const data = await resp.json().catch(() => ({}));
+
+            // Reset UI state
+            allGroups      = [];
+            activeGroupId  = null;
+            assignmentData = null;
+            groupList.innerHTML    = "";
+            groupCount.textContent = "0";
+            groupSearch.value      = "";
+            showPanel("empty");
+
+            setConnection("error", "Signed out");
+            contentErrorMsg.textContent = data.message || "Signed out. Restart the script to sign in again.";
+        } catch (err) {
+            console.error("Logout failed:", err);
+            alert("Failed to sign out. Please try again.");
+        }
     }
 
     // ── Utilities ───────────────────────────────────────────────────────
