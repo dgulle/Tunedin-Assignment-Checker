@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   Intune Assignment Checker — SPA Graph Client (MSAL.js)
+   Tunedin Assignment Checker — SPA Graph Client (MSAL.js)
    Handles authentication and direct Graph API calls when running without
    the PowerShell backend (e.g. GitHub Pages).
    ═══════════════════════════════════════════════════════════════════════════ */

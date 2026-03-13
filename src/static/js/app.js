@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   Intune Assignment Checker — Frontend (ZeroToTrust Edition)
+   Tunedin Assignment Checker — Frontend (ZeroToTrust Edition)
    Supports dual mode:
      - Backend mode: PowerShell HTTP server at /api/*
      - SPA mode: MSAL.js + direct Graph API calls (for GitHub Pages)

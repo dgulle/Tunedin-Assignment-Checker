@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-**Intune Assignment Checker** is a tool for querying and reporting Microsoft Intune policy/app assignments. It helps administrators discover what policies, applications, and configurations are assigned to users, devices, or groups within an Intune tenant.
+**Tunedin Assignment Checker** is a tool for querying and reporting Microsoft Intune policy/app assignments. It helps administrators discover what policies, applications, and configurations are assigned to users, devices, or groups within an Intune tenant.
 
 ## Repository Structure
 

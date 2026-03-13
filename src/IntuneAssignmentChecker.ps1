@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Intune Assignment Checker - interactive web dashboard for Intune group assignments.
+    Tunedin Assignment Checker - interactive web dashboard for Intune group assignments.
 
 .DESCRIPTION
     This script:
@@ -62,7 +62,7 @@ $requiredScopes = @(
 
 Write-Host ""
 Write-Host "  ======================================================" -ForegroundColor Magenta
-Write-Host "         Intune Assignment Checker                      " -ForegroundColor Magenta
+Write-Host "         Tunedin Assignment Checker                     " -ForegroundColor Magenta
 Write-Host "  ======================================================" -ForegroundColor Magenta
 Write-Host "  A browser window will open for sign-in.               " -ForegroundColor Magenta
 Write-Host "  Sign in with your Entra ID credentials and            " -ForegroundColor Magenta

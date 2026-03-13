@@ -1,4 +1,4 @@
-# Intune Assignment Checker
+# Tunedin Assignment Checker
 
 A web dashboard that connects to Microsoft Intune via the Microsoft Graph API and displays policy and application assignments for Entra ID groups. Run it locally with the PowerShell backend, or use it directly from GitHub Pages as a standalone single-page app — your choice.
 
@@ -72,7 +72,7 @@ Use the app directly from [https://dgulle.github.io/Intune-Assignment-Checker/](
 1. Go to the **Entra Portal** ([entra.microsoft.com](https://entra.microsoft.com)) > **App registrations**
 2. Click **New registration**
 3. Fill in the details:
-   - **Name:** `Intune Assignment Checker` (or any name you prefer)
+   - **Name:** `Tunedin Assignment Checker` (or any name you prefer)
    - **Supported account types:** Accounts in this organizational directory only (single tenant)
    - **Redirect URI:** Select **Single-page application (SPA)** and enter:
      ```
