@@ -144,19 +144,39 @@ var GraphClient = (function () {
         }
     }
 
-    // ── Graph API fetch with auth header ─────────────────────────────────
+    // ── Graph API fetch with auth header and retry logic ────────────────
+
+    var MAX_RETRIES = 3;
 
     async function graphFetch(url) {
         var token = await getToken();
-        var resp = await fetch(url, {
-            headers: { "Authorization": "Bearer " + token }
-        });
-        if (!resp.ok) {
-            var body = await resp.json().catch(function () { return {}; });
-            var msg = (body.error && body.error.message) || "HTTP " + resp.status;
-            throw new Error(msg);
+        var attempt = 0;
+
+        while (true) {
+            var resp = await fetch(url, {
+                headers: { "Authorization": "Bearer " + token }
+            });
+
+            // Retry on 429 (throttled) or 5xx (server error)
+            if ((resp.status === 429 || resp.status >= 500) && attempt < MAX_RETRIES) {
+                attempt++;
+                // Use Retry-After header if present, otherwise exponential backoff
+                var retryAfter = resp.headers.get("Retry-After");
+                var delay = retryAfter ? parseInt(retryAfter, 10) * 1000 : Math.pow(2, attempt) * 1000;
+                console.warn("Graph API " + resp.status + " on attempt " + attempt + ", retrying in " + delay + "ms: " + url);
+                await new Promise(function (resolve) { setTimeout(resolve, delay); });
+                // Refresh token in case it expired during the wait
+                token = await getToken();
+                continue;
+            }
+
+            if (!resp.ok) {
+                var body = await resp.json().catch(function () { return {}; });
+                var msg = (body.error && body.error.message) || "HTTP " + resp.status;
+                throw new Error(msg);
+            }
+            return resp.json();
         }
-        return resp.json();
     }
 
     // ── Paginated fetch (follows @odata.nextLink) ────────────────────────
