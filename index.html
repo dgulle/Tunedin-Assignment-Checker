@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; img-src 'self'; connect-src 'self' https://graph.microsoft.com https://login.microsoftonline.com; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
-    <title>Intune Assignment Checker — ZeroToTrust</title>
+    <title>Tunedin Assignment Checker — ZeroToTrust</title>
     <link rel="stylesheet" href="src/static/css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js" integrity="sha384-OJTwghM0Gh3Zc+gmd6l0lz1pFw9KuHHq0mSEZgmQEKgMnuSWWDb3bU9KzuD7w2hU" crossorigin="anonymous"></script>
 </head>
@@ -18,7 +18,7 @@
                     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                 </svg>
             </div>
-            <h1>Intune Assignment Checker</h1>
+            <h1>Tunedin Assignment Checker</h1>
             <p class="setup-subtitle">Enter your Azure AD app registration details to connect directly to Microsoft Graph.</p>
 
             <div class="setup-form">
@@ -41,7 +41,7 @@
                 <ol>
                     <li>Go to <strong>Entra Portal</strong> (<a href="https://entra.microsoft.com" target="_blank" rel="noopener noreferrer">entra.microsoft.com</a>) &gt; <strong>App registrations</strong></li>
                     <li>Click <strong>New registration</strong></li>
-                    <li>Name it (e.g. "Intune Assignment Checker")</li>
+                    <li>Name it (e.g. "Tunedin Assignment Checker")</li>
                     <li>Set <strong>Redirect URI</strong> to <code>Single-page application (SPA)</code> with value:<br><code id="setupRedirectHint">https://dgulle.github.io/Intune-Assignment-Checker/</code></li>
                     <li>Under <strong>API permissions</strong>, add Microsoft Graph <em>delegated</em> permissions:
                         <ul>
@@ -62,7 +62,7 @@
     <!-- Header -->
     <header class="app-header">
         <div class="header-left">
-            <h1>Intune Assignment Checker</h1>
+            <h1>Tunedin Assignment Checker</h1>
         </div>
         <div class="header-right">
             <button class="btn-header active" id="btnShowAllDevices" title="Show/hide All Devices assignments">
