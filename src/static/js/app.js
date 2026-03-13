@@ -410,7 +410,7 @@
             case "scripts":
                 return INTUNE_BASE + "#view/Microsoft_Intune_DeviceSettings/ConfigureWMPolicyMenuBlade/policyId/" + itemId + "/policyType~/0";
             case "remediations":
-                return INTUNE_BASE + "#view/Microsoft_Intune_Enrollment/UNTHealthScriptPolicy/healthScriptId/" + itemId;
+                return INTUNE_BASE + "#view/Microsoft_Intune_Enrollment/UNTRemediations";
         }
         return null;
     }
