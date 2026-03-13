@@ -169,6 +169,15 @@ html, body {
     border-color: rgba(255, 255, 255, 0.40);
 }
 
+.btn-header.active {
+    background: rgba(255, 255, 255, 0.28);
+    border-color: rgba(255, 255, 255, 0.50);
+}
+
+.btn-header:not(.active) {
+    opacity: 0.55;
+}
+
 .btn-header svg {
     flex-shrink: 0;
 }
@@ -663,33 +672,6 @@ html, body {
     align-items: center;
     gap: 6px;
     flex-wrap: wrap;
-}
-
-.btn-toggle {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 6px 12px;
-    border: 1.5px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--surface);
-    font-size: 12px;
-    font-weight: 500;
-    font-family: inherit;
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.btn-toggle:hover {
-    border-color: var(--primary-lighter);
-    color: var(--text-secondary);
-}
-
-.btn-toggle.active {
-    border-color: var(--primary);
-    background: var(--primary-pale);
-    color: var(--primary);
 }
 
 .btn-export {
