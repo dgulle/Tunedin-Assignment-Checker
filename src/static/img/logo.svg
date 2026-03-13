@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 140" fill="none">
+  <defs>
+    <linearGradient id="shieldGrad" x1="60" y1="0" x2="60" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="50%" stop-color="#818CF8"/>
+      <stop offset="100%" stop-color="#A855F7"/>
+    </linearGradient>
+    <linearGradient id="zGrad" x1="40" y1="35" x2="80" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#E2E8F0"/>
+      <stop offset="50%" stop-color="#CBD5E1"/>
+      <stop offset="100%" stop-color="#94A3B8"/>
+    </linearGradient>
+    <linearGradient id="bannerGrad" x1="10" y1="110" x2="110" y2="110" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#D946EF"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-5%" width="120%" height="115%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#64748B" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Shield outline (silver border) -->
+  <path d="M60 4 L110 22 V72 C110 95 85 112 60 122 C35 112 10 95 10 72 V22 Z"
+        fill="#E2E8F0" filter="url(#shadow)"/>
+
+  <!-- Shield body -->
+  <path d="M60 10 L105 26 V72 C105 92 82 108 60 117 C38 108 15 92 15 72 V26 Z"
+        fill="url(#shieldGrad)"/>
+
+  <!-- Z letter -->
+  <path d="M38 38 H78 L42 82 H82" stroke="url(#zGrad)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+  <!-- Bottom banner -->
+  <path d="M15 108 L25 100 H95 L105 108 L95 116 H25 Z" fill="url(#bannerGrad)"/>
+
+  <!-- Banner text -->
+  <text x="60" y="112" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="11" font-weight="700" letter-spacing="0.5" fill="white">ZEROTRUST</text>
+</svg>

@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   Intune Assignment Checker — Frontend
+   Intune Assignment Checker — Frontend (ZeroToTrust Edition)
    ═══════════════════════════════════════════════════════════════════════════ */
 
 (function () {
@@ -29,6 +29,11 @@
     const badgeDot        = connectionBadge.querySelector(".badge-dot");
     const badgeText       = connectionBadge.querySelector(".badge-text");
 
+    const scriptModal     = document.getElementById("scriptModal");
+    const scriptModalTitle = document.getElementById("scriptModalTitle");
+    const scriptModalFile  = document.getElementById("scriptModalFile");
+    const scriptModalBody  = document.getElementById("scriptModalBody");
+
     // ── State ───────────────────────────────────────────────────────────
     let allGroups      = [];
     let activeGroupId  = null;
@@ -36,11 +41,18 @@
     let activeCategory = "configurations";
 
     // ── Boot ────────────────────────────────────────────────────────────
+    initTheme();
     loadGroups();
 
     groupSearch.addEventListener("input", () => renderGroupList());
     document.getElementById("btnRetry").addEventListener("click", loadGroups);
     document.getElementById("btnLogout").addEventListener("click", logout);
+    document.getElementById("btnTheme").addEventListener("click", toggleTheme);
+    document.getElementById("btnModalClose").addEventListener("click", closeScriptModal);
+
+    scriptModal.addEventListener("click", (e) => {
+        if (e.target === scriptModal) closeScriptModal();
+    });
 
     categoryTabs.addEventListener("click", (e) => {
         const tab = e.target.closest(".tab");
@@ -49,6 +61,34 @@
         highlightTab();
         renderCards();
     });
+
+    // ── Dark mode ─────────────────────────────────────────────────────
+
+    function initTheme() {
+        const saved = localStorage.getItem("theme");
+        if (saved === "dark" || (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+            document.documentElement.setAttribute("data-theme", "dark");
+        }
+        updateThemeIcon();
+    }
+
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+        if (isDark) {
+            document.documentElement.removeAttribute("data-theme");
+            localStorage.setItem("theme", "light");
+        } else {
+            document.documentElement.setAttribute("data-theme", "dark");
+            localStorage.setItem("theme", "dark");
+        }
+        updateThemeIcon();
+    }
+
+    function updateThemeIcon() {
+        const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+        document.getElementById("iconSun").style.display  = isDark ? "block" : "none";
+        document.getElementById("iconMoon").style.display  = isDark ? "none"  : "block";
+    }
 
     // ── API helpers ─────────────────────────────────────────────────────
 
@@ -142,7 +182,7 @@
             showPanel("assignments");
         } catch (err) {
             console.error("Failed to load assignments:", err);
-            contentErrorMsg.textContent = "Failed to load assignments. Please check your connection and try again.";
+            contentErrorMsg.textContent = err.message || "Failed to load assignments. Please check your connection and try again.";
             showPanel("error");
         }
     }
@@ -188,6 +228,26 @@
         return null;
     }
 
+    // ── Intune deep links ───────────────────────────────────────────────
+
+    const INTUNE_BASE = "https://intune.microsoft.com/";
+
+    function getIntuneUrl(category, itemId) {
+        switch (category) {
+            case "configurations":
+                return `${INTUNE_BASE}#view/Microsoft_Intune_DeviceSettings/DevicesConfigProfileMenu/configurationId/${itemId}`;
+            case "settingsCatalog":
+                return `${INTUNE_BASE}#view/Microsoft_Intune_DeviceSettings/DevicesConfigProfileMenu/configurationId/${itemId}`;
+            case "applications":
+                return `${INTUNE_BASE}#view/Microsoft_Intune_Apps/SettingsMenu/appId/${itemId}`;
+            case "scripts":
+                return `${INTUNE_BASE}#view/Microsoft_Intune_DeviceSettings/ConfigureWMPolicyMenuBlade/policyId/${itemId}/policyType~/0`;
+            case "remediations":
+                return `${INTUNE_BASE}#view/Microsoft_Intune_Enrollment/UNTHealthScriptPolicy/healthScriptId/${itemId}`;
+        }
+        return null;
+    }
+
     // ── Render assignment cards ─────────────────────────────────────────
 
     function renderCards() {
@@ -223,14 +283,71 @@
                 badges.push(`<span class="badge badge-filter">Filter: ${escapeHtml(item.filterType)}</span>`);
             }
 
+            // Intune deep link
+            const url = getIntuneUrl(activeCategory, item.id);
+            const linkIcon = '<svg class="link-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+            const nameHtml = url
+                ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="Open in Intune">${escapeHtml(item.displayName || "Unnamed")}${linkIcon}</a>`
+                : escapeHtml(item.displayName || "Unnamed");
+
+            // Script preview button (eye icon) — only for scripts category
+            const showPreview = activeCategory === "scripts" && item.id;
+            const previewBtn = showPreview
+                ? `<button class="btn-preview" data-script-id="${escapeHtml(item.id)}" data-script-name="${escapeHtml(item.displayName || "Script")}" title="View script content"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>`
+                : "";
+
             card.innerHTML = `
-                <div class="card-name">${escapeHtml(item.displayName || "Unnamed")}</div>
+                <div class="card-header">
+                    <div class="card-name">${nameHtml}</div>
+                    ${previewBtn ? `<div class="card-actions">${previewBtn}</div>` : ""}
+                </div>
                 ${item.description ? `<div class="card-desc">${escapeHtml(item.description)}</div>` : ""}
                 <div class="card-meta">${badges.join("")}</div>
             `;
 
+            // Bind preview button click
+            if (showPreview) {
+                const btn = card.querySelector(".btn-preview");
+                if (btn) {
+                    btn.addEventListener("click", (e) => {
+                        e.stopPropagation();
+                        openScriptModal(item.id, item.displayName || "Script");
+                    });
+                }
+            }
+
             cardGrid.appendChild(card);
         });
+    }
+
+    // ── Script preview modal ────────────────────────────────────────────
+
+    async function openScriptModal(scriptId, scriptName) {
+        scriptModalTitle.textContent = scriptName;
+        scriptModalFile.textContent  = "";
+        scriptModalBody.innerHTML    = '<div class="modal-loading"><div class="spinner"></div><p>Loading script content...</p></div>';
+        scriptModal.classList.add("active");
+
+        try {
+            const data = await apiFetch(`/api/scripts/${scriptId}/content`);
+            scriptModalFile.textContent = data.fileName ? `(${data.fileName})` : "";
+
+            if (data.content) {
+                const pre = document.createElement("pre");
+                pre.textContent = data.content;
+                scriptModalBody.innerHTML = "";
+                scriptModalBody.appendChild(pre);
+            } else {
+                scriptModalBody.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:32px;">No script content available.</p>';
+            }
+        } catch (err) {
+            console.error("Failed to load script content:", err);
+            scriptModalBody.innerHTML = `<p style="color:#f87171;text-align:center;padding:32px;">${escapeHtml(err.message || "Failed to load script content.")}</p>`;
+        }
+    }
+
+    function closeScriptModal() {
+        scriptModal.classList.remove("active");
     }
 
     // ── Connection badge ────────────────────────────────────────────────
