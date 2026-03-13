@@ -65,7 +65,7 @@ The script will:
 
 Use the app directly from [https://dgulle.github.io/Intune-Assignment-Checker/](https://dgulle.github.io/Intune-Assignment-Checker/) — no PowerShell or local install needed. The app runs entirely in your browser using MSAL.js to authenticate directly with Microsoft Graph.
 
-**This option requires you to create your own Azure AD app registration** in your tenant.
+**This option requires you to create your own Entra ID app registration** in your tenant.
 
 #### Setting Up Your App Registration
 
