@@ -68,20 +68,12 @@ var GraphClient = (function () {
     async function signIn() {
         if (!msalInstance) throw new Error("MSAL not initialised. Call init() first.");
 
-        try {
-            // Try popup first
-            var response = await msalInstance.loginPopup({ scopes: SCOPES });
-            activeAccount = response.account;
-            return activeAccount;
-        } catch (popupErr) {
-            // If popup blocked, fall back to redirect
-            if (popupErr.errorCode === "popup_window_error" ||
-                popupErr.errorCode === "empty_window_error") {
-                await msalInstance.loginRedirect({ scopes: SCOPES });
-                return null; // page will redirect
-            }
-            throw popupErr;
-        }
+        // Use redirect flow — popups are unreliable when async work
+        // happens between the user click and the login call.
+        await msalInstance.loginRedirect({ scopes: SCOPES });
+        // Page will redirect to Microsoft login, then back.
+        // handleRedirect() picks up the response on reload.
+        return null;
     }
 
     // ── Sign out ─────────────────────────────────────────────────────────
@@ -91,14 +83,16 @@ var GraphClient = (function () {
         var account = activeAccount || (msalInstance.getAllAccounts()[0] || null);
         activeAccount = null;
         if (account) {
-            await msalInstance.logoutPopup({ account: account }).catch(function () {
-                // If popup blocked, just clear local state
+            try {
+                await msalInstance.logoutRedirect({ account: account });
+            } catch (e) {
+                // If redirect fails, clear local cache
                 msalInstance.clearCache();
-            });
+            }
         }
     }
 
-    // ── Acquire token silently (with fallback to popup) ──────────────────
+    // ── Acquire token silently (with fallback to redirect) ─────────────
 
     async function getToken() {
         if (!msalInstance) throw new Error("MSAL not initialised.");
@@ -110,11 +104,10 @@ var GraphClient = (function () {
             var response = await msalInstance.acquireTokenSilent(request);
             return response.accessToken;
         } catch (err) {
-            // If silent fails (e.g. token expired & interaction required), try popup
+            // If silent fails (e.g. token expired & interaction required), redirect
             if (err instanceof msal.InteractionRequiredAuthError) {
-                var interactiveResponse = await msalInstance.acquireTokenPopup(request);
-                activeAccount = interactiveResponse.account;
-                return interactiveResponse.accessToken;
+                await msalInstance.acquireTokenRedirect(request);
+                return null; // page will redirect
             }
             throw err;
         }

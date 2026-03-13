@@ -56,6 +56,10 @@
     var appMode = "backend";
 
     // ── Boot ────────────────────────────────────────────────────────────
+    // Hide main app immediately to prevent flash while detectMode runs
+    appHeader.style.display = "none";
+    appLayout.style.display = "none";
+
     initTheme();
     detectMode();
 
@@ -130,6 +134,12 @@
         var clientInput  = document.getElementById("setupClientId");
         if (savedTenantId) tenantInput.value = savedTenantId;
         if (savedClientId) clientInput.value = savedClientId;
+
+        // Pre-initialise MSAL if we have both values, so it's ready when
+        // the user clicks "Sign in" (avoids async work in click handler)
+        if (savedClientId && savedTenantId && !GraphClient.isInitialised()) {
+            GraphClient.init(savedClientId, savedTenantId);
+        }
     }
 
     function hideSetup() {
@@ -153,21 +163,19 @@
             return;
         }
 
-        // Save to localStorage
+        // Save to localStorage so we can pick up after redirect
         localStorage.setItem("iac_tenantId", tenantId);
         localStorage.setItem("iac_clientId", clientId);
 
-        // Init MSAL
-        await GraphClient.init(clientId, tenantId);
+        // Init MSAL if not already done (pre-init in showSetup may have done it)
+        if (!GraphClient.isInitialised()) {
+            await GraphClient.init(clientId, tenantId);
+        }
 
         try {
-            var account = await GraphClient.signIn();
-            if (account) {
-                showApp();
-                setConnection("connected", account.username || "Connected");
-                loadGroups();
-            }
-            // If null, redirect flow is happening — page will reload
+            // This will redirect the page to Microsoft login.
+            // On return, detectMode() → handleRedirect() picks up the token.
+            await GraphClient.signIn();
         } catch (err) {
             console.error("Sign-in failed:", err);
             alert("Sign-in failed: " + (err.message || err));
