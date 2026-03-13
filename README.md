@@ -63,7 +63,7 @@ Use the app directly from [https://dgulle.github.io/Intune-Assignment-Checker/](
 
 #### Setting Up Your App Registration
 
-1. Go to the **Azure Portal** > **Microsoft Entra ID** > **App registrations**
+1. Go to the **Entra Portal** ([entra.microsoft.com](https://entra.microsoft.com)) > **App registrations**
 2. Click **New registration**
 3. Fill in the details:
    - **Name:** `Intune Assignment Checker` (or any name you prefer)
