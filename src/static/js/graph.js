@@ -259,6 +259,54 @@ var GraphClient = (function () {
         return matched;
     }
 
+    async function getAssignmentsByTargetType(targetOdataType, label) {
+        var endpoints = {
+            configurations: GRAPH_BASE + "/beta/deviceManagement/deviceConfigurations?$expand=assignments&$select=id,displayName,description,assignments",
+            settingsCatalog: GRAPH_BASE + "/beta/deviceManagement/configurationPolicies?$expand=assignments&$select=id,name,description,assignments",
+            applications: GRAPH_BASE + "/beta/deviceAppManagement/mobileApps?$expand=assignments&$filter=isAssigned eq true&$select=id,displayName,description,assignments",
+            scripts: GRAPH_BASE + "/beta/deviceManagement/deviceManagementScripts?$expand=assignments&$select=id,displayName,description,assignments",
+            remediations: GRAPH_BASE + "/beta/deviceManagement/deviceHealthScripts?$expand=assignments&$select=id,displayName,description,assignments"
+        };
+
+        var keys = Object.keys(endpoints);
+        var promises = keys.map(function (key) {
+            return graphFetchAll(endpoints[key]).then(function (items) {
+                var matched = [];
+                items.forEach(function (item) {
+                    (item.assignments || []).forEach(function (a) {
+                        var t = (a.target && a.target["@odata.type"]) || "";
+                        if (t === targetOdataType) {
+                            matched.push(buildItem(item, { assignmentType: label, source: a }));
+                        }
+                    });
+                });
+                return matched;
+            }).catch(function (err) {
+                console.error("Failed to fetch " + key + ":", err);
+                return { _error: err.message || "Failed to load" };
+            });
+        });
+        var results = await Promise.all(promises);
+
+        var data = { _errors: {} };
+        keys.forEach(function (key, i) {
+            if (results[i] && results[i]._error) {
+                data[key] = [];
+                data._errors[key] = results[i]._error;
+            } else {
+                data[key] = results[i];
+            }
+            if (key === "settingsCatalog" && Array.isArray(data[key])) {
+                data[key].forEach(function (item) {
+                    if (!item.displayName && item.name) {
+                        item.displayName = item.name;
+                    }
+                });
+            }
+        });
+        return data;
+    }
+
     async function getAssignmentsForGroup(groupId) {
         var endpoints = {
             configurations: GRAPH_BASE + "/beta/deviceManagement/deviceConfigurations?$expand=assignments&$select=id,displayName,description,assignments",
@@ -386,6 +434,7 @@ var GraphClient = (function () {
         getAllGroups: getAllGroups,
         getAssignedGroupIds: getAssignedGroupIds,
         getAssignmentsForGroup: getAssignmentsForGroup,
+        getAssignmentsByTargetType: getAssignmentsByTargetType,
         getScriptContent: getScriptContent
     };
 })();

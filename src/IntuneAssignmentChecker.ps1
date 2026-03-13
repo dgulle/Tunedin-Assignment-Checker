@@ -297,6 +297,76 @@ function Get-AssignedGroupIds {
     }
 }
 
+function Get-AssignmentsByTargetType {
+    param([string]$TargetOdataType)
+
+    $categories = @{
+        configurations  = "/beta/deviceManagement/deviceConfigurations?`$expand=assignments"
+        settingsCatalog = "/beta/deviceManagement/configurationPolicies?`$expand=assignments"
+        applications    = "/beta/deviceAppManagement/mobileApps?`$expand=assignments&`$filter=isAssigned eq true"
+        scripts         = "/beta/deviceManagement/deviceManagementScripts?`$expand=assignments"
+        remediations    = "/beta/deviceManagement/deviceHealthScripts?`$expand=assignments"
+    }
+
+    $friendly = switch ($TargetOdataType) {
+        "#microsoft.graph.allDevicesAssignmentTarget"       { "All Devices" }
+        "#microsoft.graph.allLicensedUsersAssignmentTarget" { "All Users" }
+        default { $TargetOdataType }
+    }
+
+    $result  = @{}
+    $_errors = @{}
+
+    foreach ($cat in $categories.GetEnumerator()) {
+        $matched = [System.Collections.ArrayList]::new()
+        try {
+            $items = @(Invoke-GraphPaginated -Uri $cat.Value)
+        }
+        catch {
+            Write-Warning "Category $($cat.Key) failed: $($_.Exception.Message)"
+            $_errors[$cat.Key] = $_.Exception.Message
+            $result[$cat.Key]  = @()
+            continue
+        }
+
+        foreach ($item in $items) {
+            $itemAssignments = Get-SafeValue $item 'assignments'
+            if (-not $itemAssignments) { continue }
+
+            foreach ($assignment in $itemAssignments) {
+                $target = Get-SafeValue $assignment 'target'
+                if (-not $target) { continue }
+
+                $targetType = Get-SafeValue $target '@odata.type'
+                if ($targetType -ne $TargetOdataType) { continue }
+
+                $itemDisplayName = Get-SafeValue $item 'displayName'
+                $itemName        = Get-SafeValue $item 'name'
+                $displayName     = if ($itemDisplayName) { $itemDisplayName } elseif ($itemName) { $itemName } else { "N/A" }
+                $itemDesc        = Get-SafeValue $item 'description'
+                $assignIntent    = Get-SafeValue $assignment 'intent'
+                $filterId        = Get-SafeValue $target 'deviceAndAppManagementAssignmentFilterId'
+                $filterType      = Get-SafeValue $target 'deviceAndAppManagementAssignmentFilterType'
+
+                [void]$matched.Add(@{
+                    id              = Get-SafeValue $item 'id'
+                    displayName     = $displayName
+                    description     = if ($itemDesc) { $itemDesc } else { "" }
+                    assignmentType  = $friendly
+                    intent          = if ($assignIntent) { $assignIntent } else { "" }
+                    filterId        = if ($filterId) { $filterId } else { "" }
+                    filterType      = if ($filterType) { $filterType } else { "" }
+                })
+            }
+        }
+
+        $result[$cat.Key] = @($matched.ToArray())
+    }
+
+    $result['_errors'] = $_errors
+    return $result
+}
+
 # -----------------------------------------------------------------------------
 # 4. JSON serialization helper
 # -----------------------------------------------------------------------------
@@ -463,6 +533,41 @@ try {
                 }
                 catch {
                     Write-Warning "Assignment fetch failed for group $groupId : $($_.Exception.Message)"
+                    $errBody = ConvertTo-Json -InputObject @{ error = "Failed to fetch assignments. Please try again." } -Compress
+                    $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 502
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+            }
+            # -- API: assignments by target type -----------------------
+            elseif ($path -eq "/api/assignments-by-target" -and $req.HttpMethod -eq "GET") {
+                $targetType = $req.QueryString["type"]
+                $validTypes = @(
+                    "#microsoft.graph.allDevicesAssignmentTarget",
+                    "#microsoft.graph.allLicensedUsersAssignmentTarget"
+                )
+                if (-not $targetType -or $targetType -notin $validTypes) {
+                    $resp.StatusCode = 400
+                    $body   = '{"error":"Invalid or missing target type parameter."}'
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                    continue
+                }
+                try {
+                    $assignmentsResult = Get-AssignmentsByTargetType -TargetOdataType $targetType
+                    $json   = ConvertTo-Json -InputObject $assignmentsResult -Depth 10 -Compress
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 200
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+                catch {
+                    Write-Warning "Assignment fetch by target type failed: $($_.Exception.Message)"
                     $errBody = ConvertTo-Json -InputObject @{ error = "Failed to fetch assignments. Please try again." } -Compress
                     $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
                     $resp.ContentType     = "application/json; charset=utf-8"

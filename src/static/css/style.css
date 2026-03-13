@@ -377,6 +377,47 @@ html, body {
     text-overflow: ellipsis;
 }
 
+/* Synthetic group items (All Devices / All Users) */
+.group-item-synthetic {
+    background: var(--primary-pale);
+    border-color: var(--border-light);
+}
+
+.group-item-synthetic .group-item-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.group-item-synthetic .group-item-name svg {
+    flex-shrink: 0;
+    color: var(--primary-light);
+}
+
+.group-item-synthetic.active {
+    background: var(--primary);
+    border-color: var(--primary-dark);
+}
+
+.group-item-synthetic.active .group-item-name {
+    color: #fff;
+}
+
+.group-item-synthetic.active .group-item-name svg {
+    color: #fff;
+}
+
+.group-item-synthetic.active .group-item-desc {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.group-list-separator {
+    height: 1px;
+    background: var(--border);
+    margin: 8px 4px;
+    list-style: none;
+}
+
 .group-item-badges {
     display: flex;
     align-items: center;
