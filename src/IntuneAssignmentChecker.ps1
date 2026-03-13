@@ -289,8 +289,8 @@ function Set-SecurityHeaders {
     $Response.Headers.Set("X-Content-Type-Options", "nosniff")
     $Response.Headers.Set("X-Frame-Options", "DENY")
     $Response.Headers.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-    $csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; " +
-           "connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    $csp = "default-src 'none'; script-src 'self' https://alcdn.msauth.net; style-src 'self'; img-src 'self'; " +
+           "connect-src 'self' https://graph.microsoft.com https://login.microsoftonline.com; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
     $Response.Headers.Set("Content-Security-Policy", $csp)
 }
 
