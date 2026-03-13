@@ -151,12 +151,27 @@
         appLayout.style.display = "";
     }
 
+    var GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    var DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
+
     async function setupConnect() {
         var tenantId = document.getElementById("setupTenantId").value.trim();
         var clientId = document.getElementById("setupClientId").value.trim();
 
         if (!tenantId || !clientId) {
             alert("Please enter both Tenant ID and Client ID.");
+            return;
+        }
+
+        // Validate Client ID is a GUID
+        if (!GUID_RE.test(clientId)) {
+            alert("Client ID must be a valid GUID (e.g. 12345678-abcd-1234-abcd-123456789abc).");
+            return;
+        }
+
+        // Validate Tenant ID is a GUID or a domain name
+        if (!GUID_RE.test(tenantId) && !DOMAIN_RE.test(tenantId)) {
+            alert("Tenant ID must be a valid GUID or domain (e.g. contoso.onmicrosoft.com).");
             return;
         }
 
@@ -284,7 +299,7 @@
             li.innerHTML =
                 '<div class="group-item-name" title="' + escapeHtml(g.displayName || "") + '">' + escapeHtml(g.displayName || "Unnamed Group") + '</div>' +
                 (g.description ? '<div class="group-item-desc" title="' + escapeHtml(g.description) + '">' + escapeHtml(g.description) + '</div>' : '') +
-                '<span class="group-item-type">' + groupType + '</span>';
+                '<span class="group-item-type">' + escapeHtml(groupType) + '</span>';
 
             li.addEventListener("click", function () { selectGroup(g); });
             groupList.appendChild(li);

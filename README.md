@@ -170,7 +170,8 @@ Both modes require the same Microsoft Graph **delegated** permissions:
 |---|---|
 | `DeviceManagementConfiguration.Read.All` | Read device configurations and settings catalog policies |
 | `DeviceManagementApps.Read.All` | Read mobile app assignments |
-| `DeviceManagementManagedDevices.Read.All` | Read device management scripts and remediations |
+| `DeviceManagementManagedDevices.Read.All` | Read device management data |
+| `DeviceManagementScripts.Read.All` | Read device management scripts and remediations |
 | `Group.Read.All` | List and read Entra ID groups |
 | `User.Read.All` | Read user information for sign-in context |
 
