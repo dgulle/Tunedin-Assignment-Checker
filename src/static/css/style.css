@@ -113,6 +113,38 @@ html, body {
     backdrop-filter: blur(4px);
 }
 
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.btn-logout {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 20px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.btn-logout:hover {
+    background: rgba(255, 255, 255, 0.22);
+    border-color: rgba(255, 255, 255, 0.40);
+}
+
+.btn-logout svg {
+    flex-shrink: 0;
+}
+
 .badge-dot {
     width: 7px;
     height: 7px;

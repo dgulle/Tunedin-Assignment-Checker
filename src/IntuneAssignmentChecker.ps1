@@ -329,14 +329,47 @@ try {
                     $resp.OutputStream.Write($buffer, 0, $buffer.Length)
                     continue
                 }
-                $groupId     = $parsedGuid.ToString()
-                $assignments = Get-AssignmentsForGroup -GroupId $groupId
-                $json        = ConvertTo-SafeJson -InputObject $assignments
-                $buffer      = [System.Text.Encoding]::UTF8.GetBytes($json)
-                $resp.ContentType     = "application/json; charset=utf-8"
-                $resp.ContentLength64 = $buffer.Length
-                $resp.StatusCode      = 200
-                $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                $groupId = $parsedGuid.ToString()
+                try {
+                    $assignmentsResult = Get-AssignmentsForGroup -GroupId $groupId
+                    $json   = ConvertTo-SafeJson -InputObject $assignmentsResult
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 200
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+                catch {
+                    Write-Warning "Assignment fetch failed for group $groupId : $($_.Exception.Message)"
+                    $errMsg  = $_.Exception.Message -replace '"', '\"'
+                    $errBody = "{`"error`":`"Failed to fetch assignments: $errMsg`"}"
+                    $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 502
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+            }
+            # -- API: logout -----------------------------------------
+            elseif ($path -eq "/api/logout" -and $req.HttpMethod -eq "POST") {
+                try {
+                    Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+                    Write-Host "  User logged out via web UI." -ForegroundColor Yellow
+                    $body   = '{"success":true,"message":"Disconnected from Microsoft Graph. Restart the script to sign in again."}'
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 200
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+                catch {
+                    $resp.StatusCode = 500
+                    $body   = '{"error":"Failed to disconnect."}'
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
             }
             # -- Serve index.html ------------------------------------
             elseif ($path -eq "/" -or $path -eq "/index.html") {
