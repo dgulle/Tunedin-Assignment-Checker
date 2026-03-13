@@ -43,7 +43,7 @@ var GraphClient = (function () {
                 redirectUri: REDIRECT_URI
             },
             cache: {
-                cacheLocation: "localStorage",
+                cacheLocation: "sessionStorage",
                 storeAuthStateInCookie: false
             }
         };
@@ -169,7 +169,13 @@ var GraphClient = (function () {
             if (data.value) {
                 results = results.concat(data.value);
             }
-            nextUrl = data["@odata.nextLink"] || null;
+            // Only follow nextLink if it points to the Graph API (prevent token leakage)
+            var link = data["@odata.nextLink"] || null;
+            if (link && link.indexOf(GRAPH_BASE) !== 0) {
+                console.warn("Ignoring untrusted @odata.nextLink:", link);
+                link = null;
+            }
+            nextUrl = link;
         }
         return results;
     }

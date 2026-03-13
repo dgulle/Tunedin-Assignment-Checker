@@ -386,8 +386,7 @@ try {
                 }
                 catch {
                     Write-Warning "Failed to fetch assigned group IDs: $($_.Exception.Message)"
-                    $errMsg  = $_.Exception.Message -replace '"', '\"'
-                    $errBody = "{`"error`":`"Failed to fetch assigned group IDs: $errMsg`"}"
+                    $errBody = ConvertTo-Json -InputObject @{ error = "Failed to fetch assigned group IDs. Please try again." } -Compress
                     $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
                     $resp.ContentType     = "application/json; charset=utf-8"
                     $resp.ContentLength64 = $buffer.Length
@@ -420,8 +419,7 @@ try {
                 }
                 catch {
                     Write-Warning "Assignment fetch failed for group $groupId : $($_.Exception.Message)"
-                    $errMsg  = $_.Exception.Message -replace '"', '\"'
-                    $errBody = "{`"error`":`"Failed to fetch assignments: $errMsg`"}"
+                    $errBody = ConvertTo-Json -InputObject @{ error = "Failed to fetch assignments. Please try again." } -Compress
                     $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
                     $resp.ContentType     = "application/json; charset=utf-8"
                     $resp.ContentLength64 = $buffer.Length
@@ -465,8 +463,7 @@ try {
                 }
                 catch {
                     Write-Warning "Script content fetch failed for $scriptId : $($_.Exception.Message)"
-                    $errMsg  = $_.Exception.Message -replace '"', '\"'
-                    $errBody = "{`"error`":`"Failed to fetch script content: $errMsg`"}"
+                    $errBody = ConvertTo-Json -InputObject @{ error = "Failed to fetch script content. Please try again." } -Compress
                     $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
                     $resp.ContentType     = "application/json; charset=utf-8"
                     $resp.ContentLength64 = $buffer.Length
