@@ -282,16 +282,18 @@ var GraphClient = (function () {
         });
         var allResults = await Promise.all(promises);
 
-        var ids = new Set();
+        var counts = {};  // groupId -> assignment count
         allResults.forEach(function (items) {
             items.forEach(function (item) {
                 (item.assignments || []).forEach(function (a) {
                     var gid = a.target && a.target.groupId;
-                    if (gid) ids.add(gid);
+                    if (gid) {
+                        counts[gid] = (counts[gid] || 0) + 1;
+                    }
                 });
             });
         });
-        return Array.from(ids);
+        return { ids: Object.keys(counts), counts: counts };
     }
 
     async function getScriptContent(scriptId) {
@@ -313,6 +315,25 @@ var GraphClient = (function () {
         };
     }
 
+    // Reset MSAL state so a new tenant/client can be used without a page reload
+    function reset() {
+        if (msalInstance) {
+            try { msalInstance.clearCache(); } catch (e) { /* ignore */ }
+        }
+        msalInstance = null;
+        activeAccount = null;
+        initPromise = null;
+        // Clear all MSAL keys from sessionStorage
+        try {
+            var keys = Object.keys(sessionStorage);
+            for (var i = 0; i < keys.length; i++) {
+                if (keys[i].indexOf("msal.") === 0 || keys[i].indexOf("msal:") === 0) {
+                    sessionStorage.removeItem(keys[i]);
+                }
+            }
+        } catch (e) { /* sessionStorage not available */ }
+    }
+
     function isInitialised() {
         return msalInstance !== null;
     }
@@ -328,6 +349,7 @@ var GraphClient = (function () {
 
     return {
         init: init,
+        reset: reset,
         signIn: signIn,
         signOut: signOut,
         isInitialised: isInitialised,

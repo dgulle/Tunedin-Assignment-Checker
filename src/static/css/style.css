@@ -368,6 +368,14 @@ html, body {
     text-overflow: ellipsis;
 }
 
+.group-item-badges {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+}
+
 .group-item-type {
     display: inline-block;
     font-size: 10px;
@@ -376,9 +384,125 @@ html, body {
     letter-spacing: 0.04em;
     padding: 1px 6px;
     border-radius: 4px;
-    margin-top: 4px;
     background: var(--primary-pale);
     color: var(--primary-light);
+}
+
+.group-item-count {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--include-bg);
+    color: var(--include-text);
+}
+
+/* Count filter */
+.count-filter {
+    padding: 0 20px 8px;
+}
+
+.btn-count-filter {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 7px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-count-filter:hover {
+    border-color: var(--primary-lighter);
+    color: var(--primary-light);
+}
+
+.btn-count-filter.active {
+    border-color: var(--primary);
+    background: var(--primary-pale);
+    color: var(--primary);
+}
+
+.count-filter-panel {
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.count-filter-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.count-filter-row label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.count-filter-row input {
+    width: 70px;
+    padding: 5px 8px;
+    border: 1.5px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: inherit;
+    color: var(--text);
+    background: var(--surface);
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.count-filter-row input:focus {
+    border-color: var(--primary);
+}
+
+.count-filter-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.btn-count-apply, .btn-count-clear {
+    padding: 5px 14px;
+    border: none;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-count-apply {
+    background: var(--primary);
+    color: #fff;
+}
+
+.btn-count-apply:hover {
+    background: var(--primary-dark);
+}
+
+.btn-count-clear {
+    background: var(--surface);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+.btn-count-clear:hover {
+    background: var(--surface-hover);
 }
 
 /* Sidebar loading / error */
@@ -513,6 +637,14 @@ html, body {
     margin-bottom: 20px;
 }
 
+.assignments-header-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
 .assignments-header h2 {
     font-size: 22px;
     font-weight: 700;
@@ -524,6 +656,62 @@ html, body {
     font-size: 13px;
     color: var(--text-secondary);
     margin-top: 4px;
+}
+
+.assignments-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.btn-toggle {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-toggle:hover {
+    border-color: var(--primary-lighter);
+    color: var(--text-secondary);
+}
+
+.btn-toggle.active {
+    border-color: var(--primary);
+    background: var(--primary-pale);
+    color: var(--primary);
+}
+
+.btn-export {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-export:hover {
+    border-color: var(--primary-lighter);
+    background: var(--primary-pale);
+    color: var(--primary);
 }
 
 /* ── Category Tabs ───────────────────────────────────────────────────────── */

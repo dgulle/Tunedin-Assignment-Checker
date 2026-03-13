@@ -234,7 +234,7 @@ function Get-AssignedGroupIds {
         "/beta/deviceManagement/deviceHealthScripts?`$expand=assignments&`$select=id,assignments"
     )
 
-    $ids = [System.Collections.Generic.HashSet[string]]::new()
+    $counts = @{}
 
     foreach ($uri in $endpoints) {
         $items = Invoke-GraphPaginated -Uri $uri -SilentErrors
@@ -245,12 +245,21 @@ function Get-AssignedGroupIds {
                 $target  = Get-SafeValue $assignment 'target'
                 if (-not $target) { continue }
                 $gid = Get-SafeValue $target 'groupId'
-                if ($gid) { [void]$ids.Add($gid) }
+                if ($gid) {
+                    if ($counts.ContainsKey($gid)) {
+                        $counts[$gid] = $counts[$gid] + 1
+                    } else {
+                        $counts[$gid] = 1
+                    }
+                }
             }
         }
     }
 
-    @($ids)
+    @{
+        ids    = @($counts.Keys)
+        counts = $counts
+    }
 }
 
 # -----------------------------------------------------------------------------
@@ -376,8 +385,8 @@ try {
             # -- API: assigned group IDs -----------------------------
             elseif ($path -eq "/api/assigned-group-ids" -and $req.HttpMethod -eq "GET") {
                 try {
-                    $groupIds = @(Get-AssignedGroupIds)
-                    $json   = ConvertTo-SafeJson -InputObject $groupIds -AsArray
+                    $result = Get-AssignedGroupIds
+                    $json   = ConvertTo-Json -InputObject $result -Depth 10 -Compress
                     $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
                     $resp.ContentType     = "application/json; charset=utf-8"
                     $resp.ContentLength64 = $buffer.Length
