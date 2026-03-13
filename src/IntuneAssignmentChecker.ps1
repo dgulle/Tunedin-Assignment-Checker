@@ -140,6 +140,21 @@ function Get-AllGroups {
     $groups
 }
 
+function Get-SafeValue {
+    <#
+    .SYNOPSIS
+        Safely reads a property from an object that may be a hashtable or PSObject.
+        Returns $null when the key/property does not exist, avoiding StrictMode errors.
+    #>
+    param($Object, [string]$Key)
+
+    if ($null -eq $Object) { return $null }
+    if ($Object -is [hashtable]) { return $Object[$Key] }
+    $prop = $Object.PSObject.Properties.Match($Key)
+    if ($prop.Count) { return $prop[0].Value }
+    return $null
+}
+
 function Get-AssignmentsForGroup {
     param([string]$GroupId)
 
@@ -158,14 +173,16 @@ function Get-AssignmentsForGroup {
         $matched = [System.Collections.ArrayList]::new()
 
         foreach ($item in $items) {
-            if (-not $item.assignments) { continue }
+            $itemAssignments = Get-SafeValue $item 'assignments'
+            if (-not $itemAssignments) { continue }
 
-            foreach ($assignment in $item.assignments) {
-                $target = $assignment.target
+            foreach ($assignment in $itemAssignments) {
+                $target = Get-SafeValue $assignment 'target'
                 if (-not $target) { continue }
 
-                if ($target.groupId -eq $GroupId) {
-                    $targetType = $target.'@odata.type'
+                $targetGroupId = Get-SafeValue $target 'groupId'
+                if ($targetGroupId -eq $GroupId) {
+                    $targetType = Get-SafeValue $target '@odata.type'
                     $friendly = switch ($targetType) {
                         "#microsoft.graph.groupAssignmentTarget"            { "Include" }
                         "#microsoft.graph.exclusionGroupAssignmentTarget"   { "Exclude" }
@@ -174,16 +191,22 @@ function Get-AssignmentsForGroup {
                         default { $targetType }
                     }
 
-                    $displayName = if ($item.displayName) { $item.displayName } elseif ($item.name) { $item.name } else { "N/A" }
+                    $itemDisplayName = Get-SafeValue $item 'displayName'
+                    $itemName        = Get-SafeValue $item 'name'
+                    $displayName     = if ($itemDisplayName) { $itemDisplayName } elseif ($itemName) { $itemName } else { "N/A" }
+                    $itemDesc        = Get-SafeValue $item 'description'
+                    $assignIntent    = Get-SafeValue $assignment 'intent'
+                    $filterId        = Get-SafeValue $target 'deviceAndAppManagementAssignmentFilterId'
+                    $filterType      = Get-SafeValue $target 'deviceAndAppManagementAssignmentFilterType'
 
                     [void]$matched.Add(@{
-                        id              = $item.id
+                        id              = Get-SafeValue $item 'id'
                         displayName     = $displayName
-                        description     = if ($item.description) { $item.description } else { "" }
+                        description     = if ($itemDesc) { $itemDesc } else { "" }
                         assignmentType  = $friendly
-                        intent          = if ($assignment.intent) { $assignment.intent } else { "" }
-                        filterId        = if ($target.deviceAndAppManagementAssignmentFilterId) { $target.deviceAndAppManagementAssignmentFilterId } else { "" }
-                        filterType      = if ($target.deviceAndAppManagementAssignmentFilterType) { $target.deviceAndAppManagementAssignmentFilterType } else { "" }
+                        intent          = if ($assignIntent) { $assignIntent } else { "" }
+                        filterId        = if ($filterId) { $filterId } else { "" }
+                        filterType      = if ($filterType) { $filterType } else { "" }
                     })
                     break   # one match per item is enough
                 }
