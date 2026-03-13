@@ -50,7 +50,7 @@ git push -u origin <branch-name>
 
 This project likely integrates with the **Microsoft Graph API** to query Intune data. Key points:
 
-- Authentication uses **Azure AD app registration** with appropriate Intune/Graph permissions
+- Authentication uses **Entra ID app registration** with appropriate Intune/Graph permissions
 - Required API permissions (application or delegated):
   - `DeviceManagementApps.Read.All`
   - `DeviceManagementConfiguration.Read.All`
