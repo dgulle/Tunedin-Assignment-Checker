@@ -99,16 +99,35 @@ function Invoke-GraphPaginated {
     $all = [System.Collections.ArrayList]::new()
     $nextUri = $Uri
 
+    $maxRetries = 3
+
     while ($nextUri) {
-        try {
-            $response = Invoke-MgGraphRequest -Method GET -Uri $nextUri -OutputType PSObject
+        $response = $null
+        for ($attempt = 0; $attempt -le $maxRetries; $attempt++) {
+            try {
+                $response = Invoke-MgGraphRequest -Method GET -Uri $nextUri -OutputType PSObject
+                break
+            }
+            catch {
+                $statusCode = 0
+                if ($_.Exception.Response) {
+                    $statusCode = [int]$_.Exception.Response.StatusCode
+                }
+                # Retry on 429 (throttled) or 5xx (server error)
+                if (($statusCode -eq 429 -or $statusCode -ge 500) -and $attempt -lt $maxRetries) {
+                    $delay = [Math]::Pow(2, $attempt + 1)
+                    $safeUri = ($nextUri -split '\?')[0]
+                    Write-Warning "Graph API $statusCode on attempt $($attempt + 1), retrying in ${delay}s: $safeUri"
+                    Start-Sleep -Seconds $delay
+                    continue
+                }
+                $safeUri = ($nextUri -split '\?')[0]
+                Write-Warning "Graph request failed for $safeUri : $($_.Exception.Message)"
+                if ($SilentErrors) { $nextUri = $null; break }
+                throw
+            }
         }
-        catch {
-            $safeUri = ($nextUri -split '\?')[0]
-            Write-Warning "Graph request failed for $safeUri : $($_.Exception.Message)"
-            if ($SilentErrors) { break }
-            throw
-        }
+        if (-not $response) { break }
 
         if ($response.value) {
             $response.value | ForEach-Object { [void]$all.Add($_) }
