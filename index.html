@@ -108,6 +108,24 @@
                 </svg>
                 <input type="text" id="groupSearch" placeholder="Search groups..." autocomplete="off">
             </div>
+            <div class="count-filter" id="countFilter">
+                <button class="btn-count-filter" id="btnCountFilter" title="Filter groups by assignment count">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+                    Assignment Count
+                </button>
+                <div class="count-filter-panel" id="countFilterPanel" style="display:none">
+                    <div class="count-filter-row">
+                        <label>Min</label>
+                        <input type="number" id="filterMinCount" min="0" placeholder="0" autocomplete="off">
+                        <label>Max</label>
+                        <input type="number" id="filterMaxCount" min="0" placeholder="Any" autocomplete="off">
+                    </div>
+                    <div class="count-filter-actions">
+                        <button class="btn-count-apply" id="btnCountApply">Apply</button>
+                        <button class="btn-count-clear" id="btnCountClear">Clear</button>
+                    </div>
+                </div>
+            </div>
             <ul class="group-list" id="groupList">
                 <!-- Populated by JS -->
             </ul>
@@ -152,8 +170,26 @@
             <!-- Assignment data -->
             <div class="assignments" id="assignments" style="display:none">
                 <div class="assignments-header">
-                    <h2 id="selectedGroupName">Group Name</h2>
-                    <p class="assignments-subtitle" id="selectedGroupDesc"></p>
+                    <div class="assignments-header-top">
+                        <div>
+                            <h2 id="selectedGroupName">Group Name</h2>
+                            <p class="assignments-subtitle" id="selectedGroupDesc"></p>
+                        </div>
+                        <div class="assignments-header-actions">
+                            <button class="btn-toggle active" id="btnShowAllDevices" title="Show/hide All Devices assignments">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                                All Devices
+                            </button>
+                            <button class="btn-toggle active" id="btnShowAllUsers" title="Show/hide All Users assignments">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                                All Users
+                            </button>
+                            <button class="btn-export" id="btnExportCsv" title="Export current view to CSV">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                Export CSV
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Category tabs -->

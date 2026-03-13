@@ -45,12 +45,17 @@
     var appLayout     = document.querySelector(".app-layout");
 
     // ── State ───────────────────────────────────────────────────────────
-    var allGroups        = [];
-    var assignedGroupIds = new Set();
-    var filterAssigned   = true;
-    var activeGroupId    = null;
-    var assignmentData   = null;
-    var activeCategory   = "configurations";
+    var allGroups          = [];
+    var assignedGroupIds   = new Set();
+    var groupAssignCounts  = {};   // groupId -> total assignment count
+    var filterAssigned     = true;
+    var filterMinCount     = 0;    // min assignment count filter (0 = no filter)
+    var filterMaxCount     = 0;    // max assignment count filter (0 = no filter)
+    var showAllDevices     = true; // toggle for All Devices assignments
+    var showAllUsers       = true; // toggle for All Users assignments
+    var activeGroupId      = null;
+    var assignmentData     = null;
+    var activeCategory     = "configurations";
 
     // Mode: "backend" or "spa"
     var appMode = "backend";
@@ -69,6 +74,46 @@
     document.getElementById("btnTheme").addEventListener("click", toggleTheme);
     document.getElementById("btnModalClose").addEventListener("click", closeScriptModal);
     btnGroupFilter.addEventListener("click", toggleGroupFilter);
+
+    // Count filter controls
+    document.getElementById("btnCountFilter").addEventListener("click", function () {
+        var panel = document.getElementById("countFilterPanel");
+        panel.style.display = panel.style.display === "none" ? "block" : "none";
+    });
+    document.getElementById("btnCountApply").addEventListener("click", function () {
+        filterMinCount = parseInt(document.getElementById("filterMinCount").value, 10) || 0;
+        filterMaxCount = parseInt(document.getElementById("filterMaxCount").value, 10) || 0;
+        document.getElementById("countFilterPanel").style.display = "none";
+        var btn = document.getElementById("btnCountFilter");
+        btn.classList.toggle("active", filterMinCount > 0 || filterMaxCount > 0);
+        renderGroupList();
+    });
+    document.getElementById("btnCountClear").addEventListener("click", function () {
+        filterMinCount = 0;
+        filterMaxCount = 0;
+        document.getElementById("filterMinCount").value = "";
+        document.getElementById("filterMaxCount").value = "";
+        document.getElementById("countFilterPanel").style.display = "none";
+        document.getElementById("btnCountFilter").classList.remove("active");
+        renderGroupList();
+    });
+
+    // All Devices / All Users toggles
+    document.getElementById("btnShowAllDevices").addEventListener("click", function () {
+        showAllDevices = !showAllDevices;
+        this.classList.toggle("active", showAllDevices);
+        updateCounts();
+        renderCards();
+    });
+    document.getElementById("btnShowAllUsers").addEventListener("click", function () {
+        showAllUsers = !showAllUsers;
+        this.classList.toggle("active", showAllUsers);
+        updateCounts();
+        renderCards();
+    });
+
+    // Export CSV
+    document.getElementById("btnExportCsv").addEventListener("click", exportCsv);
 
     scriptModal.addEventListener("click", function (e) {
         if (e.target === scriptModal) closeScriptModal();
@@ -175,6 +220,13 @@
             return;
         }
 
+        // If tenant or client changed, reset MSAL so a fresh instance is created
+        var prevTenant = localStorage.getItem("iac_tenantId");
+        var prevClient = localStorage.getItem("iac_clientId");
+        if (GraphClient.isInitialised() && (prevTenant !== tenantId || prevClient !== clientId)) {
+            GraphClient.reset();
+        }
+
         // Save to localStorage so we can pick up after redirect
         localStorage.setItem("iac_tenantId", tenantId);
         localStorage.setItem("iac_clientId", clientId);
@@ -243,21 +295,24 @@
             if (appMode === "spa") {
                 var results = await Promise.all([
                     GraphClient.getAllGroups(),
-                    GraphClient.getAssignedGroupIds().catch(function () { return []; })
+                    GraphClient.getAssignedGroupIds().catch(function () { return { ids: [], counts: {} }; })
                 ]);
                 groups = results[0];
-                assignedIds = results[1];
+                assignedIds = results[1].ids || results[1];
+                groupAssignCounts = results[1].counts || {};
             } else {
                 var backendResults = await Promise.all([
                     apiFetch("/api/groups"),
                     apiFetch("/api/assigned-group-ids").catch(function () { return []; })
                 ]);
                 groups = backendResults[0];
-                assignedIds = backendResults[1];
+                var backendIdData = backendResults[1];
+                assignedIds = backendIdData.ids || backendIdData;
+                groupAssignCounts = backendIdData.counts || {};
             }
 
             allGroups = groups;
-            assignedGroupIds = new Set(assignedIds);
+            assignedGroupIds = new Set(Array.isArray(assignedIds) ? assignedIds : Object.keys(groupAssignCounts));
             renderGroupList();
             setConnection("connected", appMode === "spa" ? (GraphClient.getAccount()?.username || "Connected") : "Connected");
         } catch (err) {
@@ -280,6 +335,16 @@
             filtered = filtered.filter(function (g) { return assignedGroupIds.has(g.id); });
         }
 
+        // Assignment count range filter
+        if (filterMinCount > 0 || filterMaxCount > 0) {
+            filtered = filtered.filter(function (g) {
+                var cnt = groupAssignCounts[g.id] || 0;
+                if (filterMinCount > 0 && cnt < filterMinCount) return false;
+                if (filterMaxCount > 0 && cnt > filterMaxCount) return false;
+                return true;
+            });
+        }
+
         if (query) {
             filtered = filtered.filter(function (g) {
                 return (g.displayName || "").toLowerCase().indexOf(query) !== -1 ||
@@ -295,11 +360,15 @@
             li.dataset.id = g.id;
 
             var groupType = getGroupType(g);
+            var assignCount = groupAssignCounts[g.id] || 0;
 
             li.innerHTML =
                 '<div class="group-item-name" title="' + escapeHtml(g.displayName || "") + '">' + escapeHtml(g.displayName || "Unnamed Group") + '</div>' +
                 (g.description ? '<div class="group-item-desc" title="' + escapeHtml(g.description) + '">' + escapeHtml(g.description) + '</div>' : '') +
-                '<span class="group-item-type">' + escapeHtml(groupType) + '</span>';
+                '<div class="group-item-badges">' +
+                    '<span class="group-item-type">' + escapeHtml(groupType) + '</span>' +
+                    (assignCount > 0 ? '<span class="group-item-count" title="Total assignments">' + assignCount + ' assignment' + (assignCount !== 1 ? 's' : '') + '</span>' : '') +
+                '</div>';
 
             li.addEventListener("click", function () { selectGroup(g); });
             groupList.appendChild(li);
@@ -373,11 +442,20 @@
         { key: "remediations",    countId: "countRemediations"    }
     ];
 
+    function getFilteredItems(key) {
+        var items = assignmentData[key] || [];
+        return items.filter(function (item) {
+            if (!showAllDevices && item.assignmentType === "All Devices") return false;
+            if (!showAllUsers && item.assignmentType === "All Users") return false;
+            return true;
+        });
+    }
+
     function updateCounts() {
         if (!assignmentData) return;
         CATEGORIES.forEach(function (c) {
             var el = document.getElementById(c.countId);
-            if (el) el.textContent = (assignmentData[c.key] || []).length;
+            if (el) el.textContent = getFilteredItems(c.key).length;
         });
     }
 
@@ -390,7 +468,7 @@
     function getFirstNonEmptyCategory() {
         if (!assignmentData) return null;
         for (var i = 0; i < CATEGORIES.length; i++) {
-            if ((assignmentData[CATEGORIES[i].key] || []).length > 0) return CATEGORIES[i].key;
+            if (getFilteredItems(CATEGORIES[i].key).length > 0) return CATEGORIES[i].key;
         }
         return null;
     }
@@ -420,7 +498,7 @@
     function renderCards() {
         if (!assignmentData) return;
 
-        var items = assignmentData[activeCategory] || [];
+        var items = getFilteredItems(activeCategory);
         cardGrid.innerHTML = "";
 
         if (items.length === 0) {
@@ -525,6 +603,47 @@
         badgeText.textContent = text;
     }
 
+    // ── Export CSV ─────────────────────────────────────────────────────
+
+    function exportCsv() {
+        if (!assignmentData) return;
+
+        var groupName = selectedGroupName.textContent || "Group";
+        var rows = [["Category", "Name", "Description", "Assignment Type", "Intent", "Filter Type"]];
+
+        CATEGORIES.forEach(function (c) {
+            var items = getFilteredItems(c.key);
+            var label = c.key.replace(/([A-Z])/g, " $1").replace(/^./, function (s) { return s.toUpperCase(); });
+            items.forEach(function (item) {
+                rows.push([
+                    label,
+                    item.displayName || "",
+                    item.description || "",
+                    item.assignmentType || "",
+                    item.intent || "",
+                    item.filterType && item.filterType !== "none" ? item.filterType : ""
+                ]);
+            });
+        });
+
+        var csv = rows.map(function (row) {
+            return row.map(function (cell) {
+                var s = String(cell).replace(/"/g, '""');
+                return '"' + s + '"';
+            }).join(",");
+        }).join("\r\n");
+
+        var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = groupName.replace(/[^a-z0-9]/gi, "_") + "_assignments.csv";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
     // ── Logout ────────────────────────────────────────────────────────
 
     async function logout() {
@@ -538,10 +657,11 @@
             }
 
             // Reset UI
-            allGroups        = [];
-            assignedGroupIds = new Set();
-            activeGroupId    = null;
-            assignmentData   = null;
+            allGroups         = [];
+            assignedGroupIds  = new Set();
+            groupAssignCounts = {};
+            activeGroupId     = null;
+            assignmentData    = null;
             groupList.innerHTML    = "";
             groupCount.textContent = "0";
             groupSearch.value      = "";
@@ -562,10 +682,11 @@
                 var resp = await fetch("/api/logout", { method: "POST" });
                 var data = await resp.json().catch(function () { return {}; });
 
-                allGroups        = [];
-                assignedGroupIds = new Set();
-                activeGroupId    = null;
-                assignmentData   = null;
+                allGroups         = [];
+                assignedGroupIds  = new Set();
+                groupAssignCounts = {};
+                activeGroupId     = null;
+                assignmentData    = null;
                 groupList.innerHTML    = "";
                 groupCount.textContent = "0";
                 groupSearch.value      = "";
