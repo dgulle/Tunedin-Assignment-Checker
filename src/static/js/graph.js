@@ -270,14 +270,23 @@ var GraphClient = (function () {
 
         var keys = Object.keys(endpoints);
         var promises = keys.map(function (key) {
-            return getAssignmentsForCategory(endpoints[key], groupId);
+            return getAssignmentsForCategory(endpoints[key], groupId)
+                .catch(function (err) {
+                    console.error("Failed to fetch " + key + ":", err);
+                    return { _error: err.message || "Failed to load" };
+                });
         });
         var results = await Promise.all(promises);
 
-        var data = {};
+        var data = { _errors: {} };
         keys.forEach(function (key, i) {
-            data[key] = results[i];
-            if (key === "settingsCatalog") {
+            if (results[i] && results[i]._error) {
+                data[key] = [];
+                data._errors[key] = results[i]._error;
+            } else {
+                data[key] = results[i];
+            }
+            if (key === "settingsCatalog" && Array.isArray(data[key])) {
                 data[key].forEach(function (item) {
                     if (!item.displayName && item.name) {
                         item.displayName = item.name;

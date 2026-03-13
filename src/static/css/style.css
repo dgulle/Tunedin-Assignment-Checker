@@ -915,6 +915,25 @@ html, body {
     color: #FCD34D;
 }
 
+/* Category error banner */
+.category-error-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    background: var(--exclude-bg);
+    color: var(--exclude-text);
+    border: 1px solid currentColor;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.category-error-banner svg {
+    flex-shrink: 0;
+}
+
 /* Category empty */
 .category-empty {
     display: flex;
