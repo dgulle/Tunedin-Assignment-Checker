@@ -263,9 +263,11 @@
     function getIntuneUrl(category, itemId) {
         switch (category) {
             case "configurations":
-                return `${INTUNE_BASE}#view/Microsoft_Intune_DeviceSettings/DevicesConfigurationMenu/configurationId/${itemId}`;
+                // Blade name for specific config policies is undocumented; link to config list
+                return `${INTUNE_BASE}#view/Microsoft_Intune_DeviceSettings/DevicesMenu/~/configuration`;
             case "settingsCatalog":
-                return `${INTUNE_BASE}#view/Microsoft_Intune_DeviceSettings/DevicesConfigurationMenu/configurationId/${itemId}`;
+                // Blade name for specific settings catalog policies is undocumented; link to config list
+                return `${INTUNE_BASE}#view/Microsoft_Intune_DeviceSettings/DevicesMenu/~/configuration`;
             case "applications":
                 return `${INTUNE_BASE}#view/Microsoft_Intune_Apps/SettingsMenu/appId/${itemId}`;
             case "scripts":
