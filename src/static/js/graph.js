@@ -23,7 +23,7 @@ var GraphClient = (function () {
 
     // ── Initialise MSAL ──────────────────────────────────────────────────
 
-    function init(clientId, tenantId) {
+    async function init(clientId, tenantId) {
         var authority = "https://login.microsoftonline.com/" + tenantId;
 
         var msalConfig = {
@@ -39,6 +39,7 @@ var GraphClient = (function () {
         };
 
         msalInstance = new msal.PublicClientApplication(msalConfig);
+        await msalInstance.initialize();
     }
 
     // ── Handle redirect callback (for redirect flow) ─────────────────────
