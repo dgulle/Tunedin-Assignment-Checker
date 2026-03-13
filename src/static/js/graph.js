@@ -20,10 +20,19 @@ var GraphClient = (function () {
 
     var msalInstance = null;
     var activeAccount = null;
+    var initPromise = null; // tracks the full init+handleRedirect sequence
 
-    // ── Initialise MSAL ──────────────────────────────────────────────────
+    // ── Initialise MSAL and handle any pending redirect ──────────────────
 
-    async function init(clientId, tenantId) {
+    function init(clientId, tenantId) {
+        // If already initialising/initialised, return the same promise
+        if (initPromise) return initPromise;
+
+        initPromise = _doInit(clientId, tenantId);
+        return initPromise;
+    }
+
+    async function _doInit(clientId, tenantId) {
         var authority = "https://login.microsoftonline.com/" + tenantId;
 
         var msalConfig = {
@@ -39,28 +48,49 @@ var GraphClient = (function () {
         };
 
         msalInstance = new msal.PublicClientApplication(msalConfig);
-        await msalInstance.initialize();
-    }
 
-    // ── Handle redirect callback (for redirect flow) ─────────────────────
+        // initialize() is required in MSAL 2.x before any operations
+        if (typeof msalInstance.initialize === "function") {
+            await msalInstance.initialize();
+        }
 
-    async function handleRedirect() {
-        if (!msalInstance) return null;
+        // handleRedirectPromise MUST be called once after init to clear
+        // any pending redirect state — otherwise loginRedirect will refuse
+        // to start a new interaction ("interaction_in_progress").
         try {
             var response = await msalInstance.handleRedirectPromise();
-            if (response) {
+            if (response && response.account) {
                 activeAccount = response.account;
-                return activeAccount;
             }
+        } catch (err) {
+            console.warn("handleRedirectPromise error (clearing state):", err);
+            // Clear stale interaction state so future logins work
+            _clearInteractionState();
+        }
+
+        // Check for existing accounts from cache
+        if (!activeAccount) {
             var accounts = msalInstance.getAllAccounts();
             if (accounts.length > 0) {
                 activeAccount = accounts[0];
-                return activeAccount;
             }
-        } catch (err) {
-            console.error("MSAL redirect error:", err);
         }
-        return null;
+
+        return activeAccount;
+    }
+
+    // Clear MSAL's interaction-in-progress flag from sessionStorage
+    function _clearInteractionState() {
+        try {
+            var keys = Object.keys(sessionStorage);
+            for (var i = 0; i < keys.length; i++) {
+                if (keys[i].indexOf("msal.") === 0 && keys[i].indexOf("interaction") !== -1) {
+                    sessionStorage.removeItem(keys[i]);
+                }
+            }
+        } catch (e) {
+            // sessionStorage not available
+        }
     }
 
     // ── Sign in ──────────────────────────────────────────────────────────
@@ -68,11 +98,11 @@ var GraphClient = (function () {
     async function signIn() {
         if (!msalInstance) throw new Error("MSAL not initialised. Call init() first.");
 
-        // Use redirect flow — popups are unreliable when async work
-        // happens between the user click and the login call.
+        // Clear any leftover interaction state before starting a new login
+        _clearInteractionState();
+
+        // Use redirect flow — page navigates to Microsoft login, then back
         await msalInstance.loginRedirect({ scopes: SCOPES });
-        // Page will redirect to Microsoft login, then back.
-        // handleRedirect() picks up the response on reload.
         return null;
     }
 
@@ -82,17 +112,17 @@ var GraphClient = (function () {
         if (!msalInstance) return;
         var account = activeAccount || (msalInstance.getAllAccounts()[0] || null);
         activeAccount = null;
+        initPromise = null;
         if (account) {
             try {
                 await msalInstance.logoutRedirect({ account: account });
             } catch (e) {
-                // If redirect fails, clear local cache
                 msalInstance.clearCache();
             }
         }
     }
 
-    // ── Acquire token silently (with fallback to redirect) ─────────────
+    // ── Acquire token silently (with fallback to redirect) ───────────────
 
     async function getToken() {
         if (!msalInstance) throw new Error("MSAL not initialised.");
@@ -104,10 +134,10 @@ var GraphClient = (function () {
             var response = await msalInstance.acquireTokenSilent(request);
             return response.accessToken;
         } catch (err) {
-            // If silent fails (e.g. token expired & interaction required), redirect
             if (err instanceof msal.InteractionRequiredAuthError) {
+                _clearInteractionState();
                 await msalInstance.acquireTokenRedirect(request);
-                return null; // page will redirect
+                return null;
             }
             throw err;
         }
@@ -154,7 +184,6 @@ var GraphClient = (function () {
         return groups;
     }
 
-    // Helper to extract assignment info
     function extractAssignment(assignment, groupId) {
         var target = assignment.target || {};
         var targetGroupId = target.groupId || null;
@@ -221,7 +250,6 @@ var GraphClient = (function () {
         var data = {};
         keys.forEach(function (key, i) {
             data[key] = results[i];
-            // Settings catalog uses "name" not "displayName"
             if (key === "settingsCatalog") {
                 data[key].forEach(function (item) {
                     if (!item.displayName && item.name) {
@@ -291,11 +319,8 @@ var GraphClient = (function () {
         return null;
     }
 
-    // ── Public interface ─────────────────────────────────────────────────
-
     return {
         init: init,
-        handleRedirect: handleRedirect,
         signIn: signIn,
         signOut: signOut,
         isInitialised: isInitialised,

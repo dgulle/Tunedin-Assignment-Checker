@@ -108,9 +108,8 @@
 
         if (savedClientId && savedTenantId) {
             try {
-                // Init MSAL and try to handle redirect callback
-                await GraphClient.init(savedClientId, savedTenantId);
-                var account = await GraphClient.handleRedirect();
+                // Init MSAL, handle any pending redirect, check for cached account
+                var account = await GraphClient.init(savedClientId, savedTenantId);
                 if (account) {
                     showApp();
                     setConnection("connected", account.username || "Connected");
@@ -118,8 +117,7 @@
                     return;
                 }
             } catch (err) {
-                console.error("MSAL init/redirect error:", err);
-                // Fall through to show setup screen
+                console.error("MSAL init error:", err);
             }
         }
 
@@ -139,14 +137,6 @@
         var clientInput  = document.getElementById("setupClientId");
         if (savedTenantId) tenantInput.value = savedTenantId;
         if (savedClientId) clientInput.value = savedClientId;
-
-        // Pre-initialise MSAL if we have both values, so it's ready when
-        // the user clicks "Sign in" (avoids async work in click handler)
-        if (savedClientId && savedTenantId && !GraphClient.isInitialised()) {
-            GraphClient.init(savedClientId, savedTenantId).catch(function (err) {
-                console.warn("MSAL pre-init failed (will retry on sign-in):", err);
-            });
-        }
     }
 
     function hideSetup() {
@@ -174,14 +164,11 @@
         localStorage.setItem("iac_tenantId", tenantId);
         localStorage.setItem("iac_clientId", clientId);
 
-        // Init MSAL if not already done (pre-init in showSetup may have done it)
-        if (!GraphClient.isInitialised()) {
-            await GraphClient.init(clientId, tenantId);
-        }
-
         try {
-            // This will redirect the page to Microsoft login.
-            // On return, detectMode() → handleRedirect() picks up the token.
+            // Init MSAL (idempotent — reuses if already initialised)
+            await GraphClient.init(clientId, tenantId);
+
+            // Redirect to Microsoft login. On return, detectMode() picks up the token.
             await GraphClient.signIn();
         } catch (err) {
             console.error("Sign-in failed:", err);
