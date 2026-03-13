@@ -373,6 +373,51 @@ try {
                     $resp.OutputStream.Write($buffer, 0, $buffer.Length)
                 }
             }
+            # -- API: script content ---------------------------------
+            elseif ($path -match "^/api/scripts/([^/]+)/content$" -and $req.HttpMethod -eq "GET") {
+                $scriptId   = $Matches[1]
+                $parsedGuid = [System.Guid]::Empty
+                if (-not [System.Guid]::TryParse($scriptId, [ref]$parsedGuid)) {
+                    $resp.StatusCode = 400
+                    $body   = '{"error":"Invalid script ID format. Expected a valid GUID."}'
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                    continue
+                }
+                $scriptId = $parsedGuid.ToString()
+                try {
+                    $scriptObj  = Invoke-MgGraphRequest -Method GET -Uri "/beta/deviceManagement/deviceManagementScripts/$scriptId" -OutputType PSObject
+                    $b64Content = Get-SafeValue $scriptObj 'scriptContent'
+                    $fileName   = Get-SafeValue $scriptObj 'fileName'
+                    $decoded    = ""
+                    if ($b64Content) {
+                        $decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64Content))
+                    }
+                    $result = @{
+                        id          = $scriptId
+                        fileName    = if ($fileName) { $fileName } else { "" }
+                        content     = $decoded
+                    }
+                    $json   = ConvertTo-SafeJson -InputObject $result
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 200
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+                catch {
+                    Write-Warning "Script content fetch failed for $scriptId : $($_.Exception.Message)"
+                    $errMsg  = $_.Exception.Message -replace '"', '\"'
+                    $errBody = "{`"error`":`"Failed to fetch script content: $errMsg`"}"
+                    $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 502
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+            }
             # -- API: logout -----------------------------------------
             elseif ($path -eq "/api/logout" -and $req.HttpMethod -eq "POST") {
                 try {
