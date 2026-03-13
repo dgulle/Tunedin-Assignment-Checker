@@ -219,6 +219,39 @@ function Get-AssignmentsForGroup {
     return $result
 }
 
+function Get-AssignedGroupIds {
+    <#
+    .SYNOPSIS
+        Returns a list of unique group IDs that appear as assignment targets
+        across all Intune policy categories.
+    #>
+    $endpoints = @(
+        "/beta/deviceManagement/deviceConfigurations?`$expand=assignments&`$select=id,assignments"
+        "/beta/deviceManagement/configurationPolicies?`$expand=assignments&`$select=id,assignments"
+        "/beta/deviceAppManagement/mobileApps?`$expand=assignments&`$filter=isAssigned eq true&`$select=id,assignments"
+        "/beta/deviceManagement/deviceManagementScripts?`$expand=assignments&`$select=id,assignments"
+        "/beta/deviceManagement/deviceHealthScripts?`$expand=assignments&`$select=id,assignments"
+    )
+
+    $ids = [System.Collections.Generic.HashSet[string]]::new()
+
+    foreach ($uri in $endpoints) {
+        $items = Invoke-GraphPaginated -Uri $uri -SilentErrors
+        foreach ($item in $items) {
+            $itemAssignments = Get-SafeValue $item 'assignments'
+            if (-not $itemAssignments) { continue }
+            foreach ($assignment in $itemAssignments) {
+                $target  = Get-SafeValue $assignment 'target'
+                if (-not $target) { continue }
+                $gid = Get-SafeValue $target 'groupId'
+                if ($gid) { [void]$ids.Add($gid) }
+            }
+        }
+    }
+
+    @($ids)
+}
+
 # -----------------------------------------------------------------------------
 # 4. JSON serialization helper
 # -----------------------------------------------------------------------------
@@ -338,6 +371,28 @@ try {
                 $resp.ContentLength64 = $buffer.Length
                 $resp.StatusCode      = 200
                 $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+            }
+            # -- API: assigned group IDs -----------------------------
+            elseif ($path -eq "/api/assigned-group-ids" -and $req.HttpMethod -eq "GET") {
+                try {
+                    $groupIds = @(Get-AssignedGroupIds)
+                    $json   = ConvertTo-SafeJson -InputObject $groupIds -AsArray
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 200
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+                catch {
+                    Write-Warning "Failed to fetch assigned group IDs: $($_.Exception.Message)"
+                    $errMsg  = $_.Exception.Message -replace '"', '\"'
+                    $errBody = "{`"error`":`"Failed to fetch assigned group IDs: $errMsg`"}"
+                    $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 502
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
             }
             # -- API: group assignments ------------------------------
             elseif ($path -match "^/api/groups/([^/]+)/assignments$" -and $req.HttpMethod -eq "GET") {

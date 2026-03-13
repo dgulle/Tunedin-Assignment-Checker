@@ -34,11 +34,15 @@
     const scriptModalFile  = document.getElementById("scriptModalFile");
     const scriptModalBody  = document.getElementById("scriptModalBody");
 
+    const btnGroupFilter = document.getElementById("btnGroupFilter");
+
     // ── State ───────────────────────────────────────────────────────────
-    let allGroups      = [];
-    let activeGroupId  = null;
-    let assignmentData = null;
-    let activeCategory = "configurations";
+    let allGroups        = [];
+    let assignedGroupIds = new Set();
+    let filterAssigned   = true;   // default: show only groups with assignments
+    let activeGroupId    = null;
+    let assignmentData   = null;
+    let activeCategory   = "configurations";
 
     // ── Boot ────────────────────────────────────────────────────────────
     initTheme();
@@ -49,6 +53,7 @@
     document.getElementById("btnLogout").addEventListener("click", logout);
     document.getElementById("btnTheme").addEventListener("click", toggleTheme);
     document.getElementById("btnModalClose").addEventListener("click", closeScriptModal);
+    btnGroupFilter.addEventListener("click", toggleGroupFilter);
 
     scriptModal.addEventListener("click", (e) => {
         if (e.target === scriptModal) closeScriptModal();
@@ -109,8 +114,12 @@
         groupList.innerHTML           = "";
 
         try {
-            allGroups = await apiFetch("/api/groups");
-            groupCount.textContent = allGroups.length;
+            const [groups, assignedIds] = await Promise.all([
+                apiFetch("/api/groups"),
+                apiFetch("/api/assigned-group-ids").catch(() => [])
+            ]);
+            allGroups = groups;
+            assignedGroupIds = new Set(assignedIds);
             renderGroupList();
             setConnection("connected", "Connected");
         } catch (err) {
@@ -127,12 +136,20 @@
 
     function renderGroupList() {
         const query = groupSearch.value.trim().toLowerCase();
-        const filtered = query
-            ? allGroups.filter(g =>
+        let filtered = allGroups;
+
+        // Apply assigned-only filter
+        if (filterAssigned && assignedGroupIds.size > 0) {
+            filtered = filtered.filter(g => assignedGroupIds.has(g.id));
+        }
+
+        // Apply search query
+        if (query) {
+            filtered = filtered.filter(g =>
                 (g.displayName || "").toLowerCase().includes(query) ||
                 (g.description || "").toLowerCase().includes(query)
-            )
-            : allGroups;
+            );
+        }
 
         groupList.innerHTML = "";
 
@@ -161,6 +178,17 @@
         if (types.includes("DynamicMembership")) return "Dynamic";
         if (group.membershipRule) return "Dynamic";
         return "Assigned";
+    }
+
+    // ── Group filter toggle ─────────────────────────────────────────────
+
+    function toggleGroupFilter() {
+        filterAssigned = !filterAssigned;
+        btnGroupFilter.classList.toggle("active", filterAssigned);
+        btnGroupFilter.title = filterAssigned
+            ? "Showing groups with assignments — click to show all"
+            : "Showing all groups — click to filter to assigned only";
+        renderGroupList();
     }
 
     // ── Select a group ──────────────────────────────────────────────────
@@ -235,9 +263,9 @@
     function getIntuneUrl(category, itemId) {
         switch (category) {
             case "configurations":
-                return `${INTUNE_BASE}#view/Microsoft_Intune_DeviceSettings/DevicesConfigProfileMenu/configurationId/${itemId}`;
+                return `${INTUNE_BASE}#view/Microsoft_Intune_DeviceSettings/DevicesConfigurationMenu/configurationId/${itemId}`;
             case "settingsCatalog":
-                return `${INTUNE_BASE}#view/Microsoft_Intune_DeviceSettings/DevicesConfigProfileMenu/configurationId/${itemId}`;
+                return `${INTUNE_BASE}#view/Microsoft_Intune_DeviceSettings/DevicesConfigurationMenu/configurationId/${itemId}`;
             case "applications":
                 return `${INTUNE_BASE}#view/Microsoft_Intune_Apps/SettingsMenu/appId/${itemId}`;
             case "scripts":
@@ -369,9 +397,10 @@
             const data = await resp.json().catch(() => ({}));
 
             // Reset UI state
-            allGroups      = [];
-            activeGroupId  = null;
-            assignmentData = null;
+            allGroups        = [];
+            assignedGroupIds = new Set();
+            activeGroupId    = null;
+            assignmentData   = null;
             groupList.innerHTML    = "";
             groupCount.textContent = "0";
             groupSearch.value      = "";
