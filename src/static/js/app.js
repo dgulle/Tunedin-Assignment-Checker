@@ -104,7 +104,7 @@
 
         if (savedClientId && savedTenantId) {
             // Init MSAL and try to handle redirect / silent auth
-            GraphClient.init(savedClientId, savedTenantId);
+            await GraphClient.init(savedClientId, savedTenantId);
             var account = await GraphClient.handleRedirect();
             if (account) {
                 showApp();
@@ -158,7 +158,7 @@
         localStorage.setItem("iac_clientId", clientId);
 
         // Init MSAL
-        GraphClient.init(clientId, tenantId);
+        await GraphClient.init(clientId, tenantId);
 
         try {
             var account = await GraphClient.signIn();
