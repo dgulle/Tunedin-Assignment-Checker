@@ -55,6 +55,7 @@ $requiredScopes = @(
     "DeviceManagementConfiguration.Read.All"
     "DeviceManagementApps.Read.All"
     "DeviceManagementManagedDevices.Read.All"
+    "DeviceManagementScripts.Read.All"
     "Group.Read.All"
     "User.Read.All"
 )
