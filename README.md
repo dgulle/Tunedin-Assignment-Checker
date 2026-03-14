@@ -1,28 +1,28 @@
 # Tunedin Assignment Checker
 
-A web dashboard that connects to Microsoft Intune via the Microsoft Graph API and displays policy and application assignments for Entra ID groups. Run it locally with the PowerShell backend, or use it directly from GitHub Pages as a standalone single-page app — your choice.
+A web dashboard that connects to Microsoft Intune via the Microsoft Graph API and displays policy and application assignments for Entra ID groups. Run it locally with the PowerShell backend, or use it directly from GitHub Pages as a standalone single-page app, your choice.
 
 ## Features
 
 - Browse all Entra ID groups in a searchable sidebar
 - Filter to show only groups that have Intune assignments
-- **Assignment count per group** — each group displays the total number of directly-targeted assignments (excludes All Devices/All Users)
-- **Assignment count range filter** — filter the group list by assignment count (e.g. show only groups with 1–10 assignments)
+- **Assignment count per group** - each group displays the total number of directly-targeted assignments (excludes All Devices/All Users)
+- **Assignment count range filter** - filter the group list by assignment count (e.g. show only groups with 1–10 assignments)
 - View Intune assignments per group across five categories:
-  - **Device Configurations** — Configuration profiles
-  - **Settings Catalog** — Settings Catalog policies
-  - **Applications** — Assigned apps (required, available, uninstall)
-  - **Scripts** — PowerShell device management scripts (with content preview)
-  - **Remediations** — Proactive remediation (health) scripts
+  - **Device Configurations** - Configuration profiles
+  - **Settings Catalog** - Settings Catalog policies
+  - **Applications** - Assigned apps (required, available, uninstall)
+  - **Scripts** - PowerShell device management scripts (with content preview)
+  - **Remediations** - Proactive remediation (health) scripts
 - See assignment type (Include / Exclude / All Users / All Devices) and filter information
-- **All Devices & All Users groups** — dedicated entries at the bottom of the group list let you see every policy, app, script, and remediation assigned to All Devices or All Users across all categories in one click
-- **Show/Hide All Devices & All Users** — global toggle buttons in the header to show or hide All Devices and All Users assignments across all groups, reducing clutter in large tenants
-- **Dynamic membership rule display** — when selecting a dynamic group, the membership rule query is shown below the group name for quick reference
-- **Copy to clipboard** — hover-to-reveal copy buttons on group names, descriptions, dynamic membership rules, and assignment card names for fast copy/paste
-- **Export to CSV** — download all assignments for the selected group as a CSV file for offline review or troubleshooting
+- **All Devices & All Users groups** - dedicated entries at the bottom of the group list let you see every policy, app, script, and remediation assigned to All Devices or All Users across all categories in one click
+- **Show/Hide All Devices & All Users** - global toggle buttons in the header to show or hide All Devices and All Users assignments across all groups, reducing clutter in large tenants
+- **Dynamic membership rule display** - when selecting a dynamic group, the membership rule query is shown below the group name for quick reference
+- **Copy to clipboard** - hover-to-reveal copy buttons on group names, descriptions, dynamic membership rules, and assignment card names for fast copy/paste
+- **Export to CSV** - download all assignments for the selected group as a CSV file for offline review or troubleshooting
 - Direct deep links to policies and apps in the Intune portal
-- **Tenant switching** — change Tenant ID and Client ID without needing to clear your browser history
-- **Resilient Graph API handling** — automatic retry with exponential backoff on throttling (HTTP 429) and transient server errors (HTTP 5xx); partial results are shown if individual categories fail
+- **Tenant switching** - change Tenant ID and Client ID without needing to clear your browser history
+- **Resilient Graph API handling** - automatic retry with exponential backoff on throttling (HTTP 429) and transient server errors (HTTP 5xx); partial results are shown if individual categories fail
 - Dark mode with system preference detection
 - Responsive design for desktop, tablet, and mobile
 
@@ -30,7 +30,7 @@ A web dashboard that connects to Microsoft Intune via the Microsoft Graph API an
 
 ### Option 1: PowerShell Backend (Local)
 
-Run the PowerShell script locally. No app registration required — permissions are requested automatically at sign-in.
+Run the PowerShell script locally. No app registration required - permissions are requested automatically at sign-in.
 
 **Prerequisites:**
 
@@ -66,7 +66,7 @@ The script will:
 
 ### Option 2: GitHub Pages / Static Hosting (SPA Mode)
 
-Use the app directly from [https://dgulle.github.io/Intune-Assignment-Checker/](https://dgulle.github.io/Intune-Assignment-Checker/) — no PowerShell or local install needed. The app runs entirely in your browser using MSAL.js to authenticate directly with Microsoft Graph.
+Use the app directly from [https://dgulle.github.io/Intune-Assignment-Checker/](https://dgulle.github.io/Intune-Assignment-Checker/) - no PowerShell or local install needed. The app runs entirely in your browser using MSAL.js to authenticate directly with Microsoft Graph.
 
 **This option requires you to create your own Entra ID app registration** in your tenant.
 
@@ -99,7 +99,7 @@ Use the app directly from [https://dgulle.github.io/Intune-Assignment-Checker/](
 4. Sign in with your Entra ID account and consent to the permissions if prompted
 5. Your Client ID and Tenant ID are saved in your browser's local storage, so you won't need to re-enter them next time
 
-> **Switching tenants:** To connect to a different tenant, click **Sign out**, update the Tenant ID and Client ID on the setup screen, and sign in again. The app automatically resets the authentication session when it detects changed credentials — no need to clear browser history.
+> **Switching tenants:** To connect to a different tenant, click **Sign out**, update the Tenant ID and Client ID on the setup screen, and sign in again. The app automatically resets the authentication session when it detects changed credentials - no need to clear browser history.
 
 > If you self-host the app on a different domain, update the Redirect URI in your app registration to match.
 
@@ -110,7 +110,7 @@ The app auto-detects which mode to use:
 - If a PowerShell backend is running at `/api/groups`, it uses **backend mode** (all Graph calls go through PowerShell)
 - If no backend is detected, it switches to **SPA mode** (MSAL.js handles authentication and Graph calls directly from the browser)
 
-### Architecture — PowerShell Backend Mode
+### Architecture - PowerShell Backend Mode
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -137,7 +137,7 @@ The app auto-detects which mode to use:
 └───────────────────────────────────────┘
 ```
 
-### Architecture — SPA Mode (GitHub Pages)
+### Architecture - SPA Mode (GitHub Pages)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -196,15 +196,15 @@ All permissions are **read-only**. The app cannot modify your Intune environment
 
 For tenants with thousands of groups (6,000+), the app includes:
 
-- **Automatic retry** — Graph API requests that fail with HTTP 429 (throttled) or 5xx (server error) are automatically retried up to 3 times with exponential backoff (2s, 4s, 8s). The `Retry-After` header is respected when present.
-- **Partial results** — if one category (e.g. Applications) fails after retries, the other four categories still display their results. The failed category's tab shows `!` and an error banner explains the issue. Re-selecting the group retries the fetch.
-- **Assignment count filter** — quickly narrow down the group list using the min/max assignment count filter to find the groups you care about.
+- **Automatic retry** - Graph API requests that fail with HTTP 429 (throttled) or 5xx (server error) are automatically retried up to 3 times with exponential backoff (2s, 4s, 8s). The `Retry-After` header is respected when present.
+- **Partial results** - if one category (e.g. Applications) fails after retries, the other four categories still display their results. The failed category's tab shows `!` and an error banner explains the issue. Re-selecting the group retries the fetch.
+- **Assignment count filter** - quickly narrow down the group list using the min/max assignment count filter to find the groups you care about.
 
 ## Security Notes
 
-- **PowerShell mode:** Authentication uses interactive delegated flow — no secrets are stored anywhere
-- **SPA mode:** Authentication uses MSAL.js with PKCE (auth code flow) — no client secret needed. Only your Client ID and Tenant ID are stored in localStorage (these are not secrets)
+- **PowerShell mode:** Authentication uses interactive delegated flow - no secrets are stored anywhere
+- **SPA mode:** Authentication uses MSAL.js with PKCE (auth code flow) - no client secret needed. Only your Client ID and Tenant ID are stored in localStorage (these are not secrets)
 - The app only requests **read** permissions; it cannot modify your Intune environment
-- All Intune and Entra data should be treated as sensitive — avoid using the app on shared/public computers
+- All Intune and Entra data should be treated as sensitive - avoid using the app on shared/public computers
 - Press **Ctrl+C** to stop the PowerShell server; the script disconnects from Microsoft Graph automatically
 - In SPA mode, click **Sign out** to clear your session
