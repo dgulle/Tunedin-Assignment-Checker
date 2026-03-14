@@ -37,7 +37,7 @@ Run the PowerShell script locally. **No app registration required** — permissi
 
 **Prerequisites:**
 
-- **PowerShell 5.1+** (Windows PowerShell) or **PowerShell 7+** (cross-platform)
+- **PowerShell 5.1+** or **PowerShell 7+** (preferred)
 - An Entra ID account with sufficient privileges to read Intune configuration and group data
 
 > The script installs the `Microsoft.Graph.Authentication` module automatically if it is not already present.
