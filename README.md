@@ -9,7 +9,7 @@ A web dashboard that connects to Microsoft Intune via the Microsoft Graph API an
 - **Assignment count per group** - each group displays the total number of directly-targeted assignments (excludes All Devices/All Users)
 - **Assignment count range filter** - filter the group list by assignment count (e.g. show only groups with 1–10 assignments)
 
-
+![alt text](image.png)
   
 - View Intune assignments per group across five categories:
   - **Device Configurations** - Configuration profiles
@@ -18,10 +18,16 @@ A web dashboard that connects to Microsoft Intune via the Microsoft Graph API an
   - **Scripts** - PowerShell device management scripts (with content preview)
   - **Remediations** - Proactive remediation (health) scripts
 - See assignment type (Include / Exclude / All Users / All Devices) and filter information
+
+![alt text](image-1.png)
+
 - **All Devices & All Users groups** - dedicated entries at the bottom of the group list let you see every policy, app, script, and remediation assigned to All Devices or All Users across all categories in one click
 - **Show/Hide All Devices & All Users** - global toggle buttons in the header to show or hide All Devices and All Users assignments across all groups, reducing clutter in large tenants
 - **Dynamic membership rule display** - when selecting a dynamic group, the membership rule query is shown below the group name for quick reference
 - **Copy to clipboard** - hover-to-reveal copy buttons on group names, descriptions, dynamic membership rules, and assignment card names for fast copy/paste
+
+![alt text](image-2.png)
+
 - **Export to CSV** - download all assignments for the selected group as a CSV file for offline review or troubleshooting
 - Direct deep links to policies and apps in the Intune portal
 - **Tenant switching** - change Tenant ID and Client ID without needing to clear your browser history
@@ -101,6 +107,8 @@ Use the app directly from [https://dgulle.github.io/Intune-Assignment-Checker/](
 3. Click **Sign in with Microsoft**
 4. Sign in with your Entra ID account and consent to the permissions if prompted
 5. Your Client ID and Tenant ID are saved in your browser's local storage, so you won't need to re-enter them next time
+
+![alt text](image-3.png)
 
 > **Switching tenants:** To connect to a different tenant, click **Sign out**, update the Tenant ID and Client ID on the setup screen, and sign in again. The app automatically resets the authentication session when it detects changed credentials - no need to clear browser history.
 
