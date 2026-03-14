@@ -33,13 +33,12 @@ A web dashboard that connects to Microsoft Intune via the Microsoft Graph API an
 
 ### Option 1: PowerShell Backend (Local)
 
-Run the PowerShell script locally. No app registration required - permissions are requested automatically at sign-in.
+Run the PowerShell script locally. **No app registration required** — permissions are requested automatically through the **Microsoft Graph Command Line Tools** enterprise application.
 
 **Prerequisites:**
 
 - **PowerShell 5.1+** (Windows PowerShell) or **PowerShell 7+** (cross-platform)
 - An Entra ID account with sufficient privileges to read Intune configuration and group data
-- The ability to consent to the required Microsoft Graph scopes (see [Permissions](#permissions))
 
 > The script installs the `Microsoft.Graph.Authentication` module automatically if it is not already present.
 
@@ -57,8 +56,8 @@ cd Tunedin-Assignment-Checker/src
 The script will:
 
 1. Install the `Microsoft.Graph.Authentication` module (first run only).
-2. Open a browser window for interactive Entra ID sign-in.
-3. Request the required Graph permissions (consent prompt).
+2. Connect to Microsoft Graph via the **Microsoft Graph Command Line Tools** app — no app registration needed.
+3. Open a browser window for sign-in. On first use, you may be prompted to consent to the required permissions.
 4. Start a local web server on **http://localhost:8080** and open it in your default browser.
 
 **Custom Port:**
