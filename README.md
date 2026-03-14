@@ -47,11 +47,11 @@ Run the PowerShell script locally. No app registration required - permissions ar
 
 ```powershell
 # Clone the repository
-git clone https://github.com/dgulle/Intune-Assignment-Checker.git
-cd Intune-Assignment-Checker/src
+git clone https://github.com/dgulle/Tunedin-Assignment-Checker.git
+cd Tunedin-Assignment-Checker/src
 
 # Run the script
-.\IntuneAssignmentChecker.ps1
+.\TunedinAssignmentChecker.ps1
 ```
 
 The script will:
@@ -64,12 +64,12 @@ The script will:
 **Custom Port:**
 
 ```powershell
-.\IntuneAssignmentChecker.ps1 -Port 9090
+.\TunedinAssignmentChecker.ps1 -Port 9090
 ```
 
 ### Option 2: GitHub Pages / Static Hosting (SPA Mode)
 
-Use the app directly from [https://dgulle.github.io/Intune-Assignment-Checker/](https://dgulle.github.io/Intune-Assignment-Checker/) - no PowerShell or local install needed. The app runs entirely in your browser using MSAL.js to authenticate directly with Microsoft Graph.
+Use the app directly from [https://dgulle.github.io/Tunedin-Assignment-Checker/](https://dgulle.github.io/Tunedin-Assignment-Checker/) - no PowerShell or local install needed. The app runs entirely in your browser using MSAL.js to authenticate directly with Microsoft Graph.
 
 **This option requires you to create your own Entra ID app registration** in your tenant.
 
@@ -82,7 +82,7 @@ Use the app directly from [https://dgulle.github.io/Intune-Assignment-Checker/](
    - **Supported account types:** Accounts in this organizational directory only (single tenant)
    - **Redirect URI:** Select **Single-page application (SPA)** and enter:
      ```
-     https://dgulle.github.io/Intune-Assignment-Checker/
+     https://dgulle.github.io/Tunedin-Assignment-Checker/
      ```
 4. Click **Register**
 5. Go to **API permissions** > **Add a permission** > **Microsoft Graph** > **Delegated permissions** and add:
@@ -96,7 +96,7 @@ Use the app directly from [https://dgulle.github.io/Intune-Assignment-Checker/](
 
 #### Connecting
 
-1. Open the app at [https://dgulle.github.io/Intune-Assignment-Checker/](https://dgulle.github.io/Intune-Assignment-Checker/)
+1. Open the app at [https://dgulle.github.io/Tunedin-Assignment-Checker/](https://dgulle.github.io/Tunedin-Assignment-Checker/)
 2. Enter your **Tenant ID** and **Client ID** on the setup screen
 3. Click **Sign in with Microsoft**
 4. Sign in with your Entra ID account and consent to the permissions if prompted
@@ -129,7 +129,7 @@ The app auto-detects which mode to use:
                             ▼
 ┌───────────────────────────────────────┐
 │  PowerShell HTTP Listener             │
-│  IntuneAssignmentChecker.ps1          │
+│  TunedinAssignmentChecker.ps1          │
 │  (serves UI + proxies Graph calls)    │
 └───────────────────────┬───────────────┘
                         │ Invoke-MgGraphRequest
@@ -165,7 +165,7 @@ The app auto-detects which mode to use:
 
 ```
 src/
-├── IntuneAssignmentChecker.ps1   # PowerShell backend (auth, HTTP server, Graph queries)
+├── TunedinAssignmentChecker.ps1   # PowerShell backend (auth, HTTP server, Graph queries)
 ├── static/
 │   ├── css/
 │   │   └── style.css             # UI theme and layout styles
