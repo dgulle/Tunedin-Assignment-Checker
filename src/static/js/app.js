@@ -22,8 +22,10 @@
     var contentErrorMsg = document.getElementById("contentErrorMsg");
     var assignments     = document.getElementById("assignments");
 
-    var selectedGroupName = document.getElementById("selectedGroupName");
-    var selectedGroupDesc = document.getElementById("selectedGroupDesc");
+    var selectedGroupName    = document.getElementById("selectedGroupName");
+    var selectedGroupDesc    = document.getElementById("selectedGroupDesc");
+    var membershipRuleEl     = document.getElementById("membershipRule");
+    var membershipRuleQuery  = document.getElementById("membershipRuleQuery");
     var categoryTabs      = document.getElementById("categoryTabs");
     var cardGrid          = document.getElementById("cardGrid");
     var categoryEmpty     = document.getElementById("categoryEmpty");
@@ -394,15 +396,20 @@
 
             var groupType = getGroupType(g);
             var assignCount = groupAssignCounts[g.id] || 0;
+            var gName = g.displayName || "Unnamed Group";
 
             li.innerHTML =
-                '<div class="group-item-name" title="' + escapeHtml(g.displayName || "") + '">' + escapeHtml(g.displayName || "Unnamed Group") + '</div>' +
+                '<div class="group-item-header">' +
+                    '<div class="group-item-name" title="' + escapeHtml(gName) + '">' + escapeHtml(gName) + '</div>' +
+                    '<div class="group-item-copy"></div>' +
+                '</div>' +
                 (g.description ? '<div class="group-item-desc" title="' + escapeHtml(g.description) + '">' + escapeHtml(g.description) + '</div>' : '') +
                 '<div class="group-item-badges">' +
                     '<span class="group-item-type">' + escapeHtml(groupType) + '</span>' +
                     (assignCount > 0 ? '<span class="group-item-count" title="Total assignments">' + assignCount + ' assignment' + (assignCount !== 1 ? 's' : '') + '</span>' : '') +
                 '</div>';
 
+            li.querySelector(".group-item-copy").appendChild(createCopyButton(function () { return gName; }));
             li.addEventListener("click", function () { selectGroup(g); });
             groupList.appendChild(li);
         });
@@ -426,6 +433,45 @@
             ? "Showing groups with assignments \u2014 click to show all"
             : "Showing all groups \u2014 click to filter to assigned only";
         renderGroupList();
+    }
+
+    // ── Populate group header with copy buttons and dynamic rule ───────
+
+    function populateGroupHeader(group) {
+        var name = group.displayName || "Unnamed Group";
+        var desc = group.description || "";
+        var rule = group.membershipRule || "";
+
+        // Group name with copy button
+        selectedGroupName.textContent = name;
+        // Remove any previous copy button
+        var existingCopy = selectedGroupName.parentNode.querySelector(".btn-copy-name");
+        if (existingCopy) existingCopy.remove();
+        var nameCopy = createCopyButton(function () { return name; });
+        nameCopy.classList.add("btn-copy-name");
+        selectedGroupName.parentNode.insertBefore(nameCopy, selectedGroupName.nextSibling);
+
+        // Description with copy button
+        selectedGroupDesc.textContent = desc;
+        var existingDescCopy = selectedGroupDesc.parentNode.querySelector(".btn-copy-desc");
+        if (existingDescCopy) existingDescCopy.remove();
+        if (desc) {
+            var descCopy = createCopyButton(function () { return desc; });
+            descCopy.classList.add("btn-copy-desc");
+            selectedGroupDesc.parentNode.insertBefore(descCopy, selectedGroupDesc.nextSibling);
+        }
+
+        // Dynamic membership rule
+        if (rule) {
+            membershipRuleQuery.textContent = rule;
+            membershipRuleEl.style.display = "";
+            // Copy button for rule
+            var existingRuleCopy = membershipRuleEl.querySelector(".btn-copy");
+            if (existingRuleCopy) existingRuleCopy.remove();
+            membershipRuleEl.appendChild(createCopyButton(function () { return rule; }));
+        } else {
+            membershipRuleEl.style.display = "none";
+        }
     }
 
     // ── Select a group ──────────────────────────────────────────────────
@@ -454,8 +500,7 @@
                 assignmentData = await apiFetch("/api/groups/" + group.id + "/assignments");
             }
 
-            selectedGroupName.textContent = group.displayName || "Unnamed Group";
-            selectedGroupDesc.textContent = group.description || "";
+            populateGroupHeader(group);
             updateCounts();
             activeCategory = getFirstNonEmptyCategory() || "configurations";
             highlightTab();
@@ -465,8 +510,7 @@
             console.error("Failed to load assignments:", err);
             // Try to show partial results if we got any data at all
             if (assignmentData) {
-                selectedGroupName.textContent = group.displayName || "Unnamed Group";
-                selectedGroupDesc.textContent = group.description || "";
+                populateGroupHeader(group);
                 updateCounts();
                 activeCategory = getFirstNonEmptyCategory() || "configurations";
                 highlightTab();
@@ -622,10 +666,15 @@
             card.innerHTML =
                 '<div class="card-header">' +
                     '<div class="card-name">' + nameHtml + '</div>' +
-                    (previewBtn ? '<div class="card-actions">' + previewBtn + '</div>' : '') +
+                    '<div class="card-actions">' + previewBtn + '</div>' +
                 '</div>' +
                 (item.description ? '<div class="card-desc">' + escapeHtml(item.description) + '</div>' : '') +
                 '<div class="card-meta">' + badges.join("") + '</div>';
+
+            // Add copy button to card actions
+            var cardActions = card.querySelector(".card-actions");
+            var itemName = item.displayName || "Unnamed";
+            cardActions.appendChild(createCopyButton(function () { return itemName; }));
 
             if (showPreview) {
                 var btn = card.querySelector(".btn-preview");
@@ -787,5 +836,30 @@
         var div = document.createElement("div");
         div.textContent = str;
         return div.innerHTML;
+    }
+
+    // ── Copy-to-clipboard helper ─────────────────────────────────────────
+
+    var COPY_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    var CHECK_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
+    function createCopyButton(textFn) {
+        var btn = document.createElement("button");
+        btn.className = "btn-copy";
+        btn.title = "Copy to clipboard";
+        btn.innerHTML = COPY_ICON_SVG;
+        btn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            var text = typeof textFn === "function" ? textFn() : textFn;
+            navigator.clipboard.writeText(text).then(function () {
+                btn.innerHTML = CHECK_ICON_SVG;
+                btn.classList.add("copied");
+                setTimeout(function () {
+                    btn.innerHTML = COPY_ICON_SVG;
+                    btn.classList.remove("copied");
+                }, 1500);
+            });
+        });
+        return btn;
     }
 })();
