@@ -486,8 +486,17 @@ try {
         try {
             Set-SecurityHeaders -Response $resp
 
+            # -- API: status (backend mode detection) ------------------
+            if ($path -eq "/api/status" -and ($req.HttpMethod -eq "GET" -or $req.HttpMethod -eq "HEAD")) {
+                $statusBody = '{"mode":"backend"}'
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($statusBody)
+                $resp.ContentType     = "application/json; charset=utf-8"
+                $resp.ContentLength64 = $buffer.Length
+                $resp.StatusCode      = 200
+                $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+            }
             # -- API: list groups ------------------------------------
-            if ($path -eq "/api/groups" -and $req.HttpMethod -eq "GET") {
+            elseif ($path -eq "/api/groups" -and $req.HttpMethod -eq "GET") {
                 $groups = @(Get-AllGroups)
                 $json   = ConvertTo-SafeJson -InputObject $groups -AsArray
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)

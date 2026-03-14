@@ -138,17 +138,17 @@
     // ── Mode Detection ──────────────────────────────────────────────────
 
     async function detectMode() {
-        // Try to reach the PowerShell backend
+        // Try to reach the PowerShell backend via the /api/status endpoint
         try {
-            var resp = await fetch("/api/groups", { method: "HEAD" });
-            if (resp.ok || resp.status === 200) {
+            var resp = await fetch("/api/status");
+            if (resp.ok) {
                 appMode = "backend";
                 showApp();
                 loadGroups();
                 return;
             }
         } catch (e) {
-            // Backend not available
+            // Backend not available — fall through to SPA mode
         }
 
         // SPA mode
