@@ -15,7 +15,10 @@ A web dashboard that connects to Microsoft Intune via the Microsoft Graph API an
   - **Scripts** — PowerShell device management scripts (with content preview)
   - **Remediations** — Proactive remediation (health) scripts
 - See assignment type (Include / Exclude / All Users / All Devices) and filter information
+- **All Devices & All Users groups** — dedicated entries at the bottom of the group list let you see every policy, app, script, and remediation assigned to All Devices or All Users across all categories in one click
 - **Show/Hide All Devices & All Users** — global toggle buttons in the header to show or hide All Devices and All Users assignments across all groups, reducing clutter in large tenants
+- **Dynamic membership rule display** — when selecting a dynamic group, the membership rule query is shown below the group name for quick reference
+- **Copy to clipboard** — hover-to-reveal copy buttons on group names, descriptions, dynamic membership rules, and assignment card names for fast copy/paste
 - **Export to CSV** — download all assignments for the selected group as a CSV file for offline review or troubleshooting
 - Direct deep links to policies and apps in the Intune portal
 - **Tenant switching** — change Tenant ID and Client ID without needing to clear your browser history
