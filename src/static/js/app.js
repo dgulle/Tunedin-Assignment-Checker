@@ -38,6 +38,8 @@
     var scriptModalTitle = document.getElementById("scriptModalTitle");
     var scriptModalFile  = document.getElementById("scriptModalFile");
     var scriptModalBody  = document.getElementById("scriptModalBody");
+    var btnCopyScript    = document.getElementById("btnCopyScript");
+    var copyBtnLabel     = document.getElementById("copyBtnLabel");
 
     var btnGroupFilter = document.getElementById("btnGroupFilter");
 
@@ -75,6 +77,7 @@
     document.getElementById("btnLogout").addEventListener("click", logout);
     document.getElementById("btnTheme").addEventListener("click", toggleTheme);
     document.getElementById("btnModalClose").addEventListener("click", closeScriptModal);
+    btnCopyScript.addEventListener("click", copyScriptContent);
     btnGroupFilter.addEventListener("click", toggleGroupFilter);
 
     // Count filter controls
@@ -699,6 +702,8 @@
         scriptModalTitle.textContent = scriptName;
         scriptModalFile.textContent  = "";
         scriptModalBody.innerHTML    = '<div class="modal-loading"><div class="spinner"></div><p>Loading script content...</p></div>';
+        copyBtnLabel.textContent = "Copy Script";
+        btnCopyScript.classList.remove("copied");
         scriptModal.classList.add("active");
 
         try {
@@ -726,6 +731,19 @@
 
     function closeScriptModal() {
         scriptModal.classList.remove("active");
+    }
+
+    function copyScriptContent() {
+        var pre = scriptModalBody.querySelector("pre");
+        if (!pre) return;
+        navigator.clipboard.writeText(pre.textContent).then(function () {
+            copyBtnLabel.textContent = "Copied!";
+            btnCopyScript.classList.add("copied");
+            setTimeout(function () {
+                copyBtnLabel.textContent = "Copy Script";
+                btnCopyScript.classList.remove("copied");
+            }, 2000);
+        });
     }
 
     // ── Connection badge ────────────────────────────────────────────────
