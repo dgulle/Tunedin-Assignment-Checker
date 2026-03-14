@@ -760,7 +760,12 @@
 
         var csv = rows.map(function (row) {
             return row.map(function (cell) {
-                var s = String(cell).replace(/"/g, '""');
+                var s = String(cell);
+                // Prevent CSV formula injection in Excel
+                if (/^[=+\-@\t\r]/.test(s)) {
+                    s = "'" + s;
+                }
+                s = s.replace(/"/g, '""');
                 return '"' + s + '"';
             }).join(",");
         }).join("\r\n");

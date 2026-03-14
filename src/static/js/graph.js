@@ -147,15 +147,30 @@ var GraphClient = (function () {
     // ── Graph API fetch with auth header and retry logic ────────────────
 
     var MAX_RETRIES = 3;
+    var FETCH_TIMEOUT_MS = 30000;
 
     async function graphFetch(url) {
         var token = await getToken();
         var attempt = 0;
 
         while (true) {
-            var resp = await fetch(url, {
-                headers: { "Authorization": "Bearer " + token }
-            });
+            var controller = new AbortController();
+            var timeoutId = setTimeout(function () { controller.abort(); }, FETCH_TIMEOUT_MS);
+
+            var resp;
+            try {
+                resp = await fetch(url, {
+                    headers: { "Authorization": "Bearer " + token },
+                    signal: controller.signal
+                });
+            } catch (err) {
+                clearTimeout(timeoutId);
+                if (err.name === "AbortError") {
+                    throw new Error("Request timed out after " + (FETCH_TIMEOUT_MS / 1000) + "s");
+                }
+                throw err;
+            }
+            clearTimeout(timeoutId);
 
             // Retry on 429 (throttled) or 5xx (server error)
             if ((resp.status === 429 || resp.status >= 500) && attempt < MAX_RETRIES) {
@@ -175,6 +190,13 @@ var GraphClient = (function () {
                 var msg = (body.error && body.error.message) || "HTTP " + resp.status;
                 throw new Error(msg);
             }
+
+            // Validate response Content-Type before parsing
+            var contentType = resp.headers.get("Content-Type") || "";
+            if (contentType.indexOf("application/json") === -1) {
+                throw new Error("Unexpected response type: " + contentType);
+            }
+
             return resp.json();
         }
     }
@@ -191,9 +213,17 @@ var GraphClient = (function () {
             }
             // Only follow nextLink if it points to the Graph API (prevent token leakage)
             var link = data["@odata.nextLink"] || null;
-            if (link && link.indexOf(GRAPH_BASE) !== 0) {
-                console.warn("Ignoring untrusted @odata.nextLink:", link);
-                link = null;
+            if (link) {
+                try {
+                    var parsed = new URL(link);
+                    if (parsed.hostname !== "graph.microsoft.com") {
+                        console.warn("Ignoring untrusted @odata.nextLink:", link);
+                        link = null;
+                    }
+                } catch (e) {
+                    console.warn("Ignoring malformed @odata.nextLink:", link);
+                    link = null;
+                }
             }
             nextUrl = link;
         }
