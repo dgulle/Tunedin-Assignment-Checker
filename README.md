@@ -108,60 +108,7 @@ Use the app directly from [https://dgulle.github.io/Tunedin-Assignment-Checker/]
 
 > If you self-host the app on a different domain, update the Redirect URI in your app registration to match.
 
-## How It Works
 
-The app auto-detects which mode to use:
-
-- If a PowerShell backend is running at `/api/groups`, it uses **backend mode** (all Graph calls go through PowerShell)
-- If no backend is detected, it switches to **SPA mode** (MSAL.js handles authentication and Graph calls directly from the browser)
-
-### Architecture - PowerShell Backend Mode
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Browser (http://localhost:8080)                                │
-│  ┌──────────────┐  ┌────────────────────────────────────────┐  │
-│  │ Entra Groups  │  │  Configurations | Settings Catalog |  │  │
-│  │ (sidebar)     │  │  Applications   | Scripts          |  │  │
-│  │               │  │  Remediations                       |  │  │
-│  └──────────────┘  └────────────────────────────────────────┘  │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ /api/groups
-                            │ /api/groups/{id}/assignments
-                            ▼
-┌───────────────────────────────────────┐
-│  PowerShell HTTP Listener             │
-│  TunedinAssignmentChecker.ps1          │
-│  (serves UI + proxies Graph calls)    │
-└───────────────────────┬───────────────┘
-                        │ Invoke-MgGraphRequest
-                        ▼
-┌───────────────────────────────────────┐
-│  Microsoft Graph API (beta)           │
-│  graph.microsoft.com                  │
-└───────────────────────────────────────┘
-```
-
-### Architecture - SPA Mode (GitHub Pages)
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Browser (GitHub Pages / any static host)                       │
-│  ┌──────────────┐  ┌────────────────────────────────────────┐  │
-│  │ Entra Groups  │  │  Configurations | Settings Catalog |  │  │
-│  │ (sidebar)     │  │  Applications   | Scripts          |  │  │
-│  │               │  │  Remediations                       |  │  │
-│  └──────────────┘  └────────────────────────────────────────┘  │
-│                                                                 │
-│  MSAL.js (auth) + graph.js (API calls)                         │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ fetch() with Bearer token
-                            ▼
-┌───────────────────────────────────────┐
-│  Microsoft Graph API (beta)           │
-│  graph.microsoft.com                  │
-└───────────────────────────────────────┘
-```
 
 ## Project Structure
 
