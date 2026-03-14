@@ -8,6 +8,9 @@ A web dashboard that connects to Microsoft Intune via the Microsoft Graph API an
 - Filter to show only groups that have Intune assignments
 - **Assignment count per group** - each group displays the total number of directly-targeted assignments (excludes All Devices/All Users)
 - **Assignment count range filter** - filter the group list by assignment count (e.g. show only groups with 1–10 assignments)
+
+
+  
 - View Intune assignments per group across five categories:
   - **Device Configurations** - Configuration profiles
   - **Settings Catalog** - Settings Catalog policies
