@@ -9,7 +9,7 @@ This file provides guidance to Claude Code when working with this repository.
 ## Repository Structure
 
 ```
-Intune-Assignment-Checker/
+Tunedin-Assignment-Checker/
 ├── CLAUDE.md          # This file
 ├── README.md          # Project documentation
 └── src/               # Source code (to be added)
