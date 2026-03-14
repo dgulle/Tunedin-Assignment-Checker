@@ -77,7 +77,7 @@
     document.getElementById("btnLogout").addEventListener("click", logout);
     document.getElementById("btnTheme").addEventListener("click", toggleTheme);
     document.getElementById("btnModalClose").addEventListener("click", closeScriptModal);
-    btnCopyScript.addEventListener("click", copyScriptContent);
+    if (btnCopyScript) btnCopyScript.addEventListener("click", copyScriptContent);
     btnGroupFilter.addEventListener("click", toggleGroupFilter);
 
     // Count filter controls
