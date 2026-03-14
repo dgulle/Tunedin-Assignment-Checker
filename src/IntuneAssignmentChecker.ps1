@@ -404,6 +404,8 @@ function Set-SecurityHeaders {
     $Response.Headers.Set("X-Content-Type-Options", "nosniff")
     $Response.Headers.Set("X-Frame-Options", "DENY")
     $Response.Headers.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+    $Response.Headers.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()")
+    $Response.Headers.Set("X-Permitted-Cross-Domain-Policies", "none")
     $csp = "default-src 'none'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; img-src 'self'; " +
            "connect-src 'self' https://graph.microsoft.com https://login.microsoftonline.com; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
     $Response.Headers.Set("Content-Security-Policy", $csp)
