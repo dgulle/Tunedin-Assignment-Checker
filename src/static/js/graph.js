@@ -178,7 +178,7 @@ var GraphClient = (function () {
                 // Use Retry-After header if present, otherwise exponential backoff
                 var retryAfter = resp.headers.get("Retry-After");
                 var delay = retryAfter ? parseInt(retryAfter, 10) * 1000 : Math.pow(2, attempt) * 1000;
-                console.warn("Graph API " + resp.status + " on attempt " + attempt + ", retrying in " + delay + "ms: " + url);
+                console.warn("Graph API " + resp.status + " on attempt " + attempt + ", retrying in " + delay + "ms");
                 await new Promise(function (resolve) { setTimeout(resolve, delay); });
                 // Refresh token in case it expired during the wait
                 token = await getToken();
@@ -192,8 +192,8 @@ var GraphClient = (function () {
             }
 
             // Validate response Content-Type before parsing
-            var contentType = resp.headers.get("Content-Type") || "";
-            if (contentType.indexOf("application/json") === -1) {
+            var contentType = (resp.headers.get("Content-Type") || "").split(";")[0].trim();
+            if (contentType !== "application/json") {
                 throw new Error("Unexpected response type: " + contentType);
             }
 
@@ -217,11 +217,11 @@ var GraphClient = (function () {
                 try {
                     var parsed = new URL(link);
                     if (parsed.hostname !== "graph.microsoft.com") {
-                        console.warn("Ignoring untrusted @odata.nextLink:", link);
+                        console.warn("Ignoring untrusted @odata.nextLink host");
                         link = null;
                     }
                 } catch (e) {
-                    console.warn("Ignoring malformed @odata.nextLink:", link);
+                    console.warn("Ignoring malformed @odata.nextLink");
                     link = null;
                 }
             }

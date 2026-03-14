@@ -64,6 +64,37 @@
     // Mode: "backend" or "spa"
     var appMode = "backend";
 
+    // ── SPA session inactivity timeout ──────────────────────────────────
+    var SPA_IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+    var _idleTimer = null;
+
+    function resetIdleTimer() {
+        if (appMode !== "spa" || !_idleTimer) return;
+        clearTimeout(_idleTimer);
+        _idleTimer = setTimeout(onIdleTimeout, SPA_IDLE_TIMEOUT_MS);
+    }
+
+    function startIdleTimer() {
+        if (appMode !== "spa") return;
+        _idleTimer = setTimeout(onIdleTimeout, SPA_IDLE_TIMEOUT_MS);
+        ["mousemove", "keydown", "click", "scroll", "touchstart"].forEach(function (evt) {
+            document.addEventListener(evt, resetIdleTimer, { passive: true });
+        });
+    }
+
+    function stopIdleTimer() {
+        if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
+        ["mousemove", "keydown", "click", "scroll", "touchstart"].forEach(function (evt) {
+            document.removeEventListener(evt, resetIdleTimer);
+        });
+    }
+
+    function onIdleTimeout() {
+        stopIdleTimer();
+        alert("Your session has expired due to inactivity. Please sign in again.");
+        logout();
+    }
+
     // ── Boot ────────────────────────────────────────────────────────────
     // Hide main app immediately to prevent flash while detectMode runs
     appHeader.style.display = "none";
@@ -163,6 +194,7 @@
                 if (account) {
                     showApp();
                     setConnection("connected", account.username || "Connected");
+                    startIdleTimer();
                     loadGroups();
                     return;
                 }
@@ -802,6 +834,8 @@
     // ── Logout ────────────────────────────────────────────────────────
 
     async function logout() {
+        stopIdleTimer();
+
         if (appMode === "spa") {
             if (!confirm("Sign out from Microsoft Graph?")) return;
 
