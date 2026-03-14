@@ -86,10 +86,12 @@ Use the app directly from [https://dgulle.github.io/Tunedin-Assignment-Checker/]
      ```
 4. Click **Register**
 5. Go to **API permissions** > **Add a permission** > **Microsoft Graph** > **Delegated permissions** and add:
-   - `DeviceManagementConfiguration.Read.All`
    - `DeviceManagementApps.Read.All`
+   - `DeviceManagementConfiguration.Read.All`
    - `DeviceManagementManagedDevices.Read.All`
+   - `DeviceManagementScripts.Read.All`
    - `Group.Read.All`
+   - `User.Read`
    - `User.Read.All`
 6. (Recommended) Click **Grant admin consent** for your organisation so users don't have to consent individually
 7. Copy the **Application (client) ID** and your **Tenant ID** from the app registration overview page
@@ -184,14 +186,15 @@ index.html                        # Root HTML entry point (GitHub Pages / SPA mo
 
 Both modes require the same Microsoft Graph **delegated** permissions:
 
-| Permission | Purpose |
-|---|---|
-| `DeviceManagementConfiguration.Read.All` | Read device configurations and settings catalog policies |
-| `DeviceManagementApps.Read.All` | Read mobile app assignments |
-| `DeviceManagementManagedDevices.Read.All` | Read device management data |
-| `DeviceManagementScripts.Read.All` | Read device management scripts and remediations |
-| `Group.Read.All` | List and read Entra ID groups |
-| `User.Read.All` | Read user information for sign-in context |
+| Permission | Type | Description | Admin Consent Required |
+|---|---|---|---|
+| `DeviceManagementApps.Read.All` | Delegated | Read Microsoft Intune apps | Yes |
+| `DeviceManagementConfiguration.Read.All` | Delegated | Read Microsoft Intune Device Configuration | Yes |
+| `DeviceManagementManagedDevices.Read.All` | Delegated | Read Microsoft Intune devices | Yes |
+| `DeviceManagementScripts.Read.All` | Delegated | Read Microsoft Intune Scripts | Yes |
+| `Group.Read.All` | Delegated | Read all groups | Yes |
+| `User.Read` | Delegated | Sign in and read user profile | No |
+| `User.Read.All` | Delegated | Read all users' full profiles | Yes |
 
 All permissions are **read-only**. The app cannot modify your Intune environment.
 
