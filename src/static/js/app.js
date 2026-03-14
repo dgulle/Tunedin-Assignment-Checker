@@ -363,32 +363,6 @@
 
         groupList.innerHTML = "";
 
-        // Render synthetic groups at the top (filtered by search only)
-        SYNTHETIC_GROUPS.forEach(function (g) {
-            if (query && (g.displayName || "").toLowerCase().indexOf(query) === -1) return;
-            var li = document.createElement("li");
-            li.className = "group-item group-item-synthetic" + (g.id === activeGroupId ? " active" : "");
-            li.dataset.id = g.id;
-
-            var icon = g.id === "__allDevices__"
-                ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>'
-                : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
-
-            li.innerHTML =
-                '<div class="group-item-name">' + icon + ' ' + escapeHtml(g.displayName) + '</div>' +
-                '<div class="group-item-desc">' + escapeHtml(g.description) + '</div>';
-
-            li.addEventListener("click", function () { selectGroup(g); });
-            groupList.appendChild(li);
-        });
-
-        // Separator between synthetic and real groups
-        if (filtered.length > 0) {
-            var sep = document.createElement("li");
-            sep.className = "group-list-separator";
-            groupList.appendChild(sep);
-        }
-
         filtered.forEach(function (g) {
             var li = document.createElement("li");
             li.className = "group-item" + (g.id === activeGroupId ? " active" : "");
@@ -410,6 +384,33 @@
                 '</div>';
 
             li.querySelector(".group-item-copy").appendChild(createCopyButton(function () { return gName; }));
+            li.addEventListener("click", function () { selectGroup(g); });
+            groupList.appendChild(li);
+        });
+
+        // Separator before synthetic groups at the bottom
+        var syntheticFiltered = SYNTHETIC_GROUPS.filter(function (g) {
+            return !query || (g.displayName || "").toLowerCase().indexOf(query) !== -1;
+        });
+        if (syntheticFiltered.length > 0 && filtered.length > 0) {
+            var sep = document.createElement("li");
+            sep.className = "group-list-separator";
+            groupList.appendChild(sep);
+        }
+
+        syntheticFiltered.forEach(function (g) {
+            var li = document.createElement("li");
+            li.className = "group-item group-item-synthetic" + (g.id === activeGroupId ? " active" : "");
+            li.dataset.id = g.id;
+
+            var icon = g.id === "__allDevices__"
+                ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>'
+                : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+
+            li.innerHTML =
+                '<div class="group-item-name">' + icon + ' ' + escapeHtml(g.displayName) + '</div>' +
+                '<div class="group-item-desc">' + escapeHtml(g.description) + '</div>';
+
             li.addEventListener("click", function () { selectGroup(g); });
             groupList.appendChild(li);
         });
