@@ -38,7 +38,7 @@ if (-not (Get-Module -ListAvailable -Name $moduleName)) {
     Write-Host "  Installing $moduleName module (one-time setup)..." -ForegroundColor Cyan
     Write-Host ""
     try {
-        Install-Module -Name $moduleName -Scope CurrentUser -Force -AllowClobber -Repository PSGallery
+        Install-Module -Name $moduleName -Scope CurrentUser -Force -AllowClobber -Repository PSGallery -MinimumVersion 2.0.0
         Write-Host "  Module installed successfully." -ForegroundColor Green
     }
     catch {
@@ -123,13 +123,12 @@ function Invoke-GraphPaginated {
                 # Retry on 429 (throttled) or 5xx (server error)
                 if (($statusCode -eq 429 -or $statusCode -ge 500) -and $attempt -lt $maxRetries) {
                     $delay = [Math]::Pow(2, $attempt + 1)
-                    $safeUri = ($nextUri -split '\?')[0]
-                    Write-Warning "Graph API $statusCode on attempt $($attempt + 1), retrying in ${delay}s: $safeUri"
+                    Write-Warning "Graph API $statusCode on attempt $($attempt + 1), retrying in ${delay}s"
                     Start-Sleep -Seconds $delay
                     continue
                 }
                 $safeUri = ($nextUri -split '\?')[0]
-                Write-Warning "Graph request failed for $safeUri : $($_.Exception.Message)"
+                Write-Warning "Graph request failed for $safeUri (HTTP $statusCode)"
                 if ($SilentErrors) { $nextUri = $null; break }
                 throw
             }
@@ -640,6 +639,19 @@ try {
             }
             # -- API: logout -----------------------------------------
             elseif ($path -eq "/api/logout" -and $req.HttpMethod -eq "POST") {
+                # CSRF protection: only allow requests originating from this server
+                $origin = $req.Headers["Origin"]
+                $expectedOrigin = "http://localhost:$Port"
+                if ($origin -and $origin -ne $expectedOrigin) {
+                    $resp.StatusCode = 403
+                    $body   = '{"error":"Forbidden: invalid origin."}'
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                    $resp.OutputStream.Close()
+                    continue
+                }
                 try {
                     Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
                     Write-Host "  User logged out via web UI." -ForegroundColor Yellow
