@@ -462,15 +462,17 @@
         }
 
         // Dynamic membership rule
-        if (rule) {
-            membershipRuleQuery.textContent = rule;
-            membershipRuleEl.style.display = "";
-            // Copy button for rule
-            var existingRuleCopy = membershipRuleEl.querySelector(".btn-copy");
-            if (existingRuleCopy) existingRuleCopy.remove();
-            membershipRuleEl.appendChild(createCopyButton(function () { return rule; }));
-        } else {
-            membershipRuleEl.style.display = "none";
+        if (membershipRuleEl) {
+            if (rule) {
+                membershipRuleQuery.textContent = rule;
+                membershipRuleEl.style.display = "";
+                // Copy button for rule
+                var existingRuleCopy = membershipRuleEl.querySelector(".btn-copy");
+                if (existingRuleCopy) existingRuleCopy.remove();
+                membershipRuleEl.appendChild(createCopyButton(function () { return rule; }));
+            } else {
+                membershipRuleEl.style.display = "none";
+            }
         }
     }
 
