@@ -5,11 +5,13 @@
 .DESCRIPTION
     This script:
       1. Installs the Microsoft.Graph.Authentication module if missing.
-      2. Prompts the user to sign in with their Entra ID credentials (interactive browser flow).
-      3. Automatically requests the required Microsoft Graph permissions (consent prompt).
+      2. Connects to Microsoft Graph via the "Microsoft Graph Command Line Tools"
+         enterprise application (no custom app registration required).
+      3. Opens a browser for interactive sign-in and consent to the required
+         permissions (only on first use or when new scopes are added).
       4. Starts a local web server and opens the dashboard in the default browser.
 
-    No manual app registrations, client secrets, or portal configuration required.
+    No app registrations, client secrets, or portal configuration required.
 
 .NOTES
     Requires PowerShell 5.1+ (Windows PowerShell) or PowerShell 7+ (cross-platform).
@@ -52,11 +54,12 @@ Import-Module $moduleName -ErrorAction Stop
 # -----------------------------------------------------------------------------
 
 $requiredScopes = @(
-    "DeviceManagementConfiguration.Read.All"
     "DeviceManagementApps.Read.All"
+    "DeviceManagementConfiguration.Read.All"
     "DeviceManagementManagedDevices.Read.All"
     "DeviceManagementScripts.Read.All"
     "Group.Read.All"
+    "User.Read"
     "User.Read.All"
 )
 
@@ -64,9 +67,13 @@ Write-Host ""
 Write-Host "  ======================================================" -ForegroundColor Magenta
 Write-Host "         Tunedin Assignment Checker                     " -ForegroundColor Magenta
 Write-Host "  ======================================================" -ForegroundColor Magenta
+Write-Host "  No app registration required.                         " -ForegroundColor Magenta
+Write-Host "  Permissions are requested via Microsoft Graph          " -ForegroundColor Magenta
+Write-Host "  Command Line Tools.                                   " -ForegroundColor Magenta
+Write-Host "                                                        " -ForegroundColor Magenta
 Write-Host "  A browser window will open for sign-in.               " -ForegroundColor Magenta
-Write-Host "  Sign in with your Entra ID credentials and            " -ForegroundColor Magenta
-Write-Host "  accept the requested permissions.                     " -ForegroundColor Magenta
+Write-Host "  You may be prompted to consent to permissions         " -ForegroundColor Magenta
+Write-Host "  on first use.                                         " -ForegroundColor Magenta
 Write-Host "  ======================================================" -ForegroundColor Magenta
 Write-Host ""
 
