@@ -68,7 +68,7 @@ The script will:
 
 ### Option 2: GitHub Pages / Static Hosting (SPA Mode)
 
-Use the app directly from [https://dgulle.github.io/Tunedin-Assignment-Checker/](https://dgulle.github.io/Tunedin-Assignment-Checker/) - no PowerShell or local install needed. The app runs entirely in your browser using MSAL.js to authenticate directly with Microsoft Graph.
+Use the app directly from [http://tunedin.zerototrust.tech/](http://tunedin.zerototrust.tech/) - no PowerShell or local install needed. The app runs entirely in your browser using MSAL.js to authenticate directly with Microsoft Graph.
 
 **This option requires you to create your own Entra ID app registration** in your tenant.
 
@@ -81,7 +81,7 @@ Use the app directly from [https://dgulle.github.io/Tunedin-Assignment-Checker/]
    - **Supported account types:** Accounts in this organizational directory only (single tenant)
    - **Redirect URI:** Select **Single-page application (SPA)** and enter:
      ```
-     https://dgulle.github.io/Tunedin-Assignment-Checker/
+     http://tunedin.zerototrust.tech/
      ```
 4. Click **Register**
 5. Go to **API permissions** > **Add a permission** > **Microsoft Graph** > **Delegated permissions** and add:
@@ -97,7 +97,7 @@ Use the app directly from [https://dgulle.github.io/Tunedin-Assignment-Checker/]
 
 #### Connecting
 
-1. Open the app at [https://dgulle.github.io/Tunedin-Assignment-Checker/](https://dgulle.github.io/Tunedin-Assignment-Checker/)
+1. Open the app at [http://tunedin.zerototrust.tech/](http://tunedin.zerototrust.tech/)
 2. Enter your **Tenant ID** and **Client ID** on the setup screen
 3. Click **Sign in with Microsoft**
 4. Sign in with your Entra ID account and consent to the permissions if prompted
