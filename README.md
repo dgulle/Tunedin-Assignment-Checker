@@ -16,13 +16,16 @@ A web dashboard that connects to Microsoft Intune via the Microsoft Graph API an
   - **Scripts** - PowerShell device management scripts (with content preview)
   - **Remediations** - Proactive remediation (health) scripts
 - See assignment type (Include / Exclude / All Users / All Devices) and filter information
+- **Nested group assignments** - when a group is nested inside another group, inherited assignments from parent groups are automatically discovered and displayed with an "Inherited: Parent Group Name" badge, so you can see exactly where each assignment originates. A **Nested Groups** toggle in the header lets you show or hide inherited assignments.
 
 - **All Devices & All Users groups** - dedicated entries at the bottom of the group list let you see every policy, app, script, and remediation assigned to All Devices or All Users across all categories in one click
 - **Show/Hide All Devices & All Users** - global toggle buttons in the header to show or hide All Devices and All Users assignments across all groups, reducing clutter in large tenants
 - **Dynamic membership rule display** - when selecting a dynamic group, the membership rule query is shown below the group name for quick reference
 - **Copy to clipboard** - hover-to-reveal copy buttons on group names, descriptions, dynamic membership rules, and assignment card names for fast copy/paste
 
-- **Export to CSV** - download all assignments for the selected group as a CSV file for offline review or troubleshooting
+- **Orphaned items detection** - a dedicated **Orphaned Items** view lists all Intune items (configurations, settings catalog policies, applications, scripts, and remediations) that have zero assignments, making it easy to identify stale items for cleanup after group consolidation. Includes a **CSV export** for quick reporting.
+
+- **Export to CSV** - download all assignments for the selected group as a CSV file for offline review or troubleshooting (includes "Inherited From" column for nested group assignments)
 - Direct deep links to policies and apps in the Intune portal
 - **Tenant switching** - change Tenant ID and Client ID without needing to clear your browser history
 - **Resilient Graph API handling** - automatic retry with exponential backoff on throttling (HTTP 429) and transient server errors (HTTP 5xx); partial results are shown if individual categories fail
