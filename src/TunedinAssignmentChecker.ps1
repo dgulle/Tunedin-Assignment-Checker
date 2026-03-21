@@ -898,10 +898,22 @@ try {
             }
             # -- API: logout -----------------------------------------
             elseif ($path -eq "/api/logout" -and $req.HttpMethod -eq "POST") {
-                # CSRF protection: only allow requests originating from this server
-                $origin = $req.Headers["Origin"]
+                # CSRF protection: validate Origin header, fall back to Referer
+                $origin         = $req.Headers["Origin"]
+                $referer        = $req.Headers["Referer"]
                 $expectedOrigin = "http://localhost:$Port"
-                if ($origin -and $origin -ne $expectedOrigin) {
+                $csrfValid      = $false
+
+                if ($origin) {
+                    # Origin header present — must match exactly
+                    $csrfValid = ($origin -eq $expectedOrigin)
+                } elseif ($referer) {
+                    # No Origin header — fall back to Referer prefix check
+                    $csrfValid = $referer.StartsWith("$expectedOrigin/")
+                }
+                # If neither header is present, reject the request
+
+                if (-not $csrfValid) {
                     $resp.StatusCode = 403
                     $body   = '{"error":"Forbidden: invalid origin."}'
                     $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
