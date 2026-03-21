@@ -117,8 +117,9 @@ function Invoke-GraphPaginated {
             }
             catch {
                 $statusCode = 0
-                if ($_.Exception.Response) {
-                    $statusCode = [int]$_.Exception.Response.StatusCode
+                $respProp = $_.Exception.PSObject.Properties['Response']
+                if ($respProp) {
+                    $statusCode = [int]$respProp.Value.StatusCode
                 }
                 # Retry on 429 (throttled) or 5xx (server error)
                 if (($statusCode -eq 429 -or $statusCode -ge 500) -and $attempt -lt $maxRetries) {
