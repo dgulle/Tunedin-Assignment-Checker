@@ -375,6 +375,125 @@ var GraphClient = (function () {
         return data;
     }
 
+    async function getGroupParents(groupId) {
+        var url = GRAPH_BASE + "/v1.0/groups/" + groupId + "/transitiveMemberOf/microsoft.graph.group?$select=id,displayName&$top=999";
+        return graphFetchAll(url);
+    }
+
+    async function getNestedAssignments(groupId) {
+        var parents = await getGroupParents(groupId);
+        if (!parents || parents.length === 0) {
+            return {
+                configurations: [], settingsCatalog: [], applications: [],
+                scripts: [], remediations: [], _errors: {}
+            };
+        }
+
+        // Build lookup of parent group IDs to names
+        var parentLookup = {};
+        parents.forEach(function (p) {
+            if (p.id) parentLookup[p.id] = p.displayName || p.id;
+        });
+
+        var endpoints = {
+            configurations: GRAPH_BASE + "/beta/deviceManagement/deviceConfigurations?$expand=assignments&$select=id,displayName,description,assignments",
+            settingsCatalog: GRAPH_BASE + "/beta/deviceManagement/configurationPolicies?$expand=assignments&$select=id,name,description,assignments",
+            applications: GRAPH_BASE + "/beta/deviceAppManagement/mobileApps?$expand=assignments&$filter=isAssigned eq true&$select=id,displayName,description,assignments",
+            scripts: GRAPH_BASE + "/beta/deviceManagement/deviceManagementScripts?$expand=assignments&$select=id,displayName,description,assignments",
+            remediations: GRAPH_BASE + "/beta/deviceManagement/deviceHealthScripts?$expand=assignments&$select=id,displayName,description,assignments"
+        };
+
+        var keys = Object.keys(endpoints);
+        var promises = keys.map(function (key) {
+            return graphFetchAll(endpoints[key]).then(function (items) {
+                var matched = [];
+                items.forEach(function (item) {
+                    (item.assignments || []).forEach(function (a) {
+                        var t = a.target || {};
+                        var tGroupId = t.groupId || null;
+                        if (tGroupId && parentLookup[tGroupId]) {
+                            var odataType = t["@odata.type"] || "";
+                            var assignmentType = odataType.indexOf("exclusion") !== -1 ? "Exclude" : "Include";
+                            var built = buildItem(item, { assignmentType: assignmentType, source: a });
+                            built.inheritedFrom = parentLookup[tGroupId];
+                            built.inheritedFromId = tGroupId;
+                            matched.push(built);
+                        }
+                    });
+                });
+                return matched;
+            }).catch(function (err) {
+                console.error("Failed to fetch nested " + key + ":", err);
+                return { _error: err.message || "Failed to load" };
+            });
+        });
+
+        var results = await Promise.all(promises);
+        var data = { _errors: {} };
+        keys.forEach(function (key, i) {
+            if (results[i] && results[i]._error) {
+                data[key] = [];
+                data._errors[key] = results[i]._error;
+            } else {
+                data[key] = results[i];
+            }
+            if (key === "settingsCatalog" && Array.isArray(data[key])) {
+                data[key].forEach(function (item) {
+                    if (!item.displayName && item.name) item.displayName = item.name;
+                });
+            }
+        });
+        return data;
+    }
+
+    async function getOrphanedItems() {
+        var endpoints = {
+            configurations: GRAPH_BASE + "/beta/deviceManagement/deviceConfigurations?$expand=assignments&$select=id,displayName,description,assignments",
+            settingsCatalog: GRAPH_BASE + "/beta/deviceManagement/configurationPolicies?$expand=assignments&$select=id,name,description,assignments",
+            applications: GRAPH_BASE + "/beta/deviceAppManagement/mobileApps?$expand=assignments&$select=id,displayName,description,assignments",
+            scripts: GRAPH_BASE + "/beta/deviceManagement/deviceManagementScripts?$expand=assignments&$select=id,displayName,description,assignments",
+            remediations: GRAPH_BASE + "/beta/deviceManagement/deviceHealthScripts?$expand=assignments&$select=id,displayName,description,assignments"
+        };
+
+        var keys = Object.keys(endpoints);
+        var promises = keys.map(function (key) {
+            return graphFetchAll(endpoints[key]).then(function (items) {
+                var orphaned = [];
+                items.forEach(function (item) {
+                    var assignments = item.assignments || [];
+                    if (assignments.length === 0) {
+                        orphaned.push({
+                            id: item.id,
+                            displayName: item.displayName || item.name || "Unnamed",
+                            description: item.description || ""
+                        });
+                    }
+                });
+                return orphaned;
+            }).catch(function (err) {
+                console.error("Failed to fetch orphaned " + key + ":", err);
+                return { _error: err.message || "Failed to load" };
+            });
+        });
+
+        var results = await Promise.all(promises);
+        var data = { _errors: {} };
+        keys.forEach(function (key, i) {
+            if (results[i] && results[i]._error) {
+                data[key] = [];
+                data._errors[key] = results[i]._error;
+            } else {
+                data[key] = results[i];
+            }
+            if (key === "settingsCatalog" && Array.isArray(data[key])) {
+                data[key].forEach(function (item) {
+                    if (!item.displayName && item.name) item.displayName = item.name;
+                });
+            }
+        });
+        return data;
+    }
+
     async function getAssignedGroupIds() {
         var endpoints = [
             GRAPH_BASE + "/beta/deviceManagement/deviceConfigurations?$expand=assignments&$select=id,assignments",
@@ -465,6 +584,9 @@ var GraphClient = (function () {
         getAssignedGroupIds: getAssignedGroupIds,
         getAssignmentsForGroup: getAssignmentsForGroup,
         getAssignmentsByTargetType: getAssignmentsByTargetType,
-        getScriptContent: getScriptContent
+        getScriptContent: getScriptContent,
+        getGroupParents: getGroupParents,
+        getNestedAssignments: getNestedAssignments,
+        getOrphanedItems: getOrphanedItems
     };
 })();

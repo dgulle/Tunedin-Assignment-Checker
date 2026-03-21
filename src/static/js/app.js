@@ -59,6 +59,9 @@
     var showAllUsers       = true; // toggle for All Users assignments
     var activeGroupId      = null;
     var assignmentData     = null;
+    var nestedData         = null;  // nested/inherited assignments via parent groups
+    var orphanedData       = null;  // orphaned items (no assignments)
+    var showNested         = true;  // toggle for nested group assignments
     var activeCategory     = "configurations";
 
     // Mode: "backend" or "spa"
@@ -148,6 +151,13 @@
         renderCards();
     });
 
+    document.getElementById("btnShowNested").addEventListener("click", function () {
+        showNested = !showNested;
+        this.classList.toggle("active", showNested);
+        updateCounts();
+        renderCards();
+    });
+
     // Export CSV
     document.getElementById("btnExportCsv").addEventListener("click", exportCsv);
 
@@ -160,7 +170,11 @@
         if (!tab) return;
         activeCategory = tab.dataset.category;
         highlightTab();
-        renderCards();
+        if (activeGroupId === "__orphaned__") {
+            renderOrphanedCards();
+        } else {
+            renderCards();
+        }
     });
 
     // Setup screen connect button
@@ -366,7 +380,8 @@
 
     var SYNTHETIC_GROUPS = [
         { id: "__allDevices__", displayName: "All Devices", description: "Policies and apps assigned to all devices", _synthetic: true },
-        { id: "__allUsers__",   displayName: "All Users",   description: "Policies and apps assigned to all licensed users", _synthetic: true }
+        { id: "__allUsers__",   displayName: "All Users",   description: "Policies and apps assigned to all licensed users", _synthetic: true },
+        { id: "__orphaned__",   displayName: "Orphaned Items", description: "Items with no assignments — review for deletion", _synthetic: true }
     ];
 
     // ── Render group list (with search filter) ──────────────────────────
@@ -438,9 +453,14 @@
             li.className = "group-item group-item-synthetic" + (g.id === activeGroupId ? " active" : "");
             li.dataset.id = g.id;
 
-            var icon = g.id === "__allDevices__"
-                ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>'
-                : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+            var icon;
+            if (g.id === "__allDevices__") {
+                icon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+            } else if (g.id === "__orphaned__") {
+                icon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+            } else {
+                icon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+            }
 
             li.innerHTML =
                 '<div class="group-item-name">' + icon + ' ' + escapeHtml(g.displayName) + '</div>' +
@@ -516,11 +536,28 @@
 
     async function selectGroup(group) {
         activeGroupId = group.id;
+        nestedData = null;
+        orphanedData = null;
         renderGroupList();
         showPanel("loading");
 
         try {
-            if (group._synthetic) {
+            if (group._synthetic && group.id === "__orphaned__") {
+                // Orphaned items view
+                if (appMode === "spa") {
+                    orphanedData = await GraphClient.getOrphanedItems();
+                } else {
+                    orphanedData = await apiFetch("/api/orphaned-items");
+                }
+                assignmentData = null;
+                populateGroupHeader(group);
+                updateOrphanedCounts();
+                activeCategory = getFirstNonEmptyOrphanedCategory() || "configurations";
+                highlightTab();
+                renderOrphanedCards();
+                showPanel("assignments");
+                return;
+            } else if (group._synthetic) {
                 // Synthetic group: fetch by target type
                 var targetType = group.id === "__allDevices__"
                     ? "#microsoft.graph.allDevicesAssignmentTarget"
@@ -533,9 +570,19 @@
                     assignmentData = await apiFetch("/api/assignments-by-target?type=" + encodeURIComponent(targetType));
                 }
             } else if (appMode === "spa") {
-                assignmentData = await GraphClient.getAssignmentsForGroup(group.id);
+                var groupResults = await Promise.all([
+                    GraphClient.getAssignmentsForGroup(group.id),
+                    GraphClient.getNestedAssignments(group.id).catch(function () { return null; })
+                ]);
+                assignmentData = groupResults[0];
+                nestedData = groupResults[1];
             } else {
-                assignmentData = await apiFetch("/api/groups/" + group.id + "/assignments");
+                var backendGroupResults = await Promise.all([
+                    apiFetch("/api/groups/" + group.id + "/assignments"),
+                    apiFetch("/api/groups/" + group.id + "/nested-assignments").catch(function () { return null; })
+                ]);
+                assignmentData = backendGroupResults[0];
+                nestedData = backendGroupResults[1];
             }
 
             populateGroupHeader(group);
@@ -582,11 +629,29 @@
 
     function getFilteredItems(key) {
         var items = assignmentData[key] || [];
-        return items.filter(function (item) {
+        var filtered = items.filter(function (item) {
             if (!showAllDevices && item.assignmentType === "All Devices") return false;
             if (!showAllUsers && item.assignmentType === "All Users") return false;
             return true;
         });
+
+        // Merge nested/inherited assignments if available and enabled
+        if (showNested && nestedData && nestedData[key]) {
+            var nestedItems = nestedData[key] || [];
+            // Avoid duplicates: only add nested items not already in the direct list
+            var directIds = {};
+            filtered.forEach(function (item) {
+                directIds[item.id + "|" + (item.assignmentType || "")] = true;
+            });
+            nestedItems.forEach(function (item) {
+                var dedupKey = item.id + "|" + (item.assignmentType || "");
+                if (!directIds[dedupKey]) {
+                    filtered.push(item);
+                }
+            });
+        }
+
+        return filtered;
     }
 
     function updateCounts() {
@@ -689,6 +754,9 @@
             if (item.filterType && item.filterType !== "none") {
                 badges.push('<span class="badge badge-filter">Filter: ' + escapeHtml(item.filterType) + '</span>');
             }
+            if (item.inheritedFrom) {
+                badges.push('<span class="badge badge-inherited" title="Inherited via nested group membership">Inherited: ' + escapeHtml(item.inheritedFrom) + '</span>');
+            }
 
             var url = getIntuneUrl(activeCategory, item.id);
             var linkIcon = '<svg class="link-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
@@ -726,6 +794,126 @@
 
             cardGrid.appendChild(card);
         });
+    }
+
+    // ── Orphaned items helpers ─────────────────────────────────────────
+
+    function updateOrphanedCounts() {
+        if (!orphanedData) return;
+        var errors = orphanedData._errors || {};
+        CATEGORIES.forEach(function (c) {
+            var el = document.getElementById(c.countId);
+            if (el) {
+                if (errors[c.key]) {
+                    el.textContent = "!";
+                    el.title = "Failed to load — click to retry";
+                } else {
+                    el.textContent = (orphanedData[c.key] || []).length;
+                    el.title = "";
+                }
+            }
+        });
+    }
+
+    function getFirstNonEmptyOrphanedCategory() {
+        if (!orphanedData) return null;
+        for (var i = 0; i < CATEGORIES.length; i++) {
+            if ((orphanedData[CATEGORIES[i].key] || []).length > 0) return CATEGORIES[i].key;
+        }
+        return null;
+    }
+
+    function renderOrphanedCards() {
+        if (!orphanedData) return;
+
+        var errors = orphanedData._errors || {};
+        var categoryError = errors[activeCategory];
+        var items = orphanedData[activeCategory] || [];
+        cardGrid.innerHTML = "";
+
+        // Show error banner if this category failed
+        var existingBanner = document.getElementById("categoryErrorBanner");
+        if (existingBanner) existingBanner.remove();
+
+        if (categoryError) {
+            var banner = document.createElement("div");
+            banner.id = "categoryErrorBanner";
+            banner.className = "category-error-banner";
+            banner.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+                '<span>Failed to load this category.</span>';
+            cardGrid.parentNode.insertBefore(banner, cardGrid);
+        }
+
+        if (items.length === 0) {
+            cardGrid.style.display     = "none";
+            categoryEmpty.style.display = categoryError ? "none" : "flex";
+            return;
+        }
+
+        cardGrid.style.display      = "grid";
+        categoryEmpty.style.display = "none";
+
+        items.forEach(function (item) {
+            var card = document.createElement("div");
+            card.className = "assignment-card orphaned-card";
+
+            var url = getIntuneUrl(activeCategory, item.id);
+            var linkIcon = '<svg class="link-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+            var nameHtml = url
+                ? '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer" title="Open in Intune">' + escapeHtml(item.displayName || "Unnamed") + linkIcon + '</a>'
+                : escapeHtml(item.displayName || "Unnamed");
+
+            card.innerHTML =
+                '<div class="card-header">' +
+                    '<div class="card-name">' + nameHtml + '</div>' +
+                    '<div class="card-actions"></div>' +
+                '</div>' +
+                (item.description ? '<div class="card-desc">' + escapeHtml(item.description) + '</div>' : '') +
+                '<div class="card-meta"><span class="badge badge-orphaned">No Assignments</span></div>';
+
+            var cardActions = card.querySelector(".card-actions");
+            var itemName = item.displayName || "Unnamed";
+            cardActions.appendChild(createCopyButton(function () { return itemName; }));
+
+            cardGrid.appendChild(card);
+        });
+    }
+
+    function exportOrphanedCsv() {
+        if (!orphanedData) return;
+
+        var rows = [["Category", "Name", "Description"]];
+
+        CATEGORIES.forEach(function (c) {
+            var items = orphanedData[c.key] || [];
+            var label = c.key.replace(/([A-Z])/g, " $1").replace(/^./, function (s) { return s.toUpperCase(); });
+            items.forEach(function (item) {
+                rows.push([
+                    label,
+                    item.displayName || "",
+                    item.description || ""
+                ]);
+            });
+        });
+
+        var csv = rows.map(function (row) {
+            return row.map(function (cell) {
+                var s = String(cell);
+                if (/^[=+\-@\t\r]/.test(s)) { s = "'" + s; }
+                s = s.replace(/"/g, '""');
+                return '"' + s + '"';
+            }).join(",");
+        }).join("\r\n");
+
+        var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "orphaned_items.csv";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 
     // ── Script preview modal ────────────────────────────────────────────
@@ -788,10 +976,16 @@
     // ── Export CSV ─────────────────────────────────────────────────────
 
     function exportCsv() {
+        // Handle orphaned items export
+        if (activeGroupId === "__orphaned__") {
+            exportOrphanedCsv();
+            return;
+        }
+
         if (!assignmentData) return;
 
         var groupName = selectedGroupName.textContent || "Group";
-        var rows = [["Category", "Name", "Description", "Assignment Type", "Intent", "Filter Type"]];
+        var rows = [["Category", "Name", "Description", "Assignment Type", "Intent", "Filter Type", "Inherited From"]];
 
         CATEGORIES.forEach(function (c) {
             var items = getFilteredItems(c.key);
@@ -803,7 +997,8 @@
                     item.description || "",
                     item.assignmentType || "",
                     item.intent || "",
-                    item.filterType && item.filterType !== "none" ? item.filterType : ""
+                    item.filterType && item.filterType !== "none" ? item.filterType : "",
+                    item.inheritedFrom || ""
                 ]);
             });
         });
@@ -851,6 +1046,8 @@
             groupAssignCounts = {};
             activeGroupId     = null;
             assignmentData    = null;
+            nestedData        = null;
+            orphanedData      = null;
             groupList.innerHTML    = "";
             groupCount.textContent = "0";
             groupSearch.value      = "";

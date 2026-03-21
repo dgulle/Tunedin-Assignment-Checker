@@ -261,6 +261,166 @@ function Get-AssignmentsForGroup {
     return $result
 }
 
+function Get-GroupParentGroups {
+    <#
+    .SYNOPSIS
+        Returns the transitive group memberships for a given group.
+        This reveals which parent groups this group is nested within.
+    #>
+    param([Parameter(Mandatory)][string]$GroupId)
+
+    $uri = "/v1.0/groups/$GroupId/transitiveMemberOf/microsoft.graph.group?`$select=id,displayName&`$top=999"
+    $parents = @(Invoke-GraphPaginated -Uri $uri -SilentErrors)
+    return $parents
+}
+
+function Get-NestedGroupAssignments {
+    <#
+    .SYNOPSIS
+        For a given group, finds all assignments that come through parent group
+        memberships (nested/inherited assignments).
+    #>
+    param(
+        [Parameter(Mandatory)][string]$GroupId,
+        [Parameter(Mandatory)][array]$ParentGroups
+    )
+
+    $categories = @{
+        configurations  = "/beta/deviceManagement/deviceConfigurations?`$expand=assignments"
+        settingsCatalog = "/beta/deviceManagement/configurationPolicies?`$expand=assignments"
+        applications    = "/beta/deviceAppManagement/mobileApps?`$expand=assignments&`$filter=isAssigned eq true"
+        scripts         = "/beta/deviceManagement/deviceManagementScripts?`$expand=assignments"
+        remediations    = "/beta/deviceManagement/deviceHealthScripts?`$expand=assignments"
+    }
+
+    # Build a lookup of parent group IDs to names
+    $parentLookup = @{}
+    foreach ($pg in $ParentGroups) {
+        $pgId = Get-SafeValue $pg 'id'
+        $pgName = Get-SafeValue $pg 'displayName'
+        if ($pgId) { $parentLookup[$pgId] = if ($pgName) { $pgName } else { $pgId } }
+    }
+
+    $result  = @{}
+    $_errors = @{}
+
+    foreach ($cat in $categories.GetEnumerator()) {
+        $matched = [System.Collections.ArrayList]::new()
+        try {
+            $items = @(Invoke-GraphPaginated -Uri $cat.Value)
+        }
+        catch {
+            $_errors[$cat.Key] = $_.Exception.Message
+            $result[$cat.Key]  = @()
+            continue
+        }
+
+        foreach ($item in $items) {
+            $itemAssignments = Get-SafeValue $item 'assignments'
+            if (-not $itemAssignments) { continue }
+
+            foreach ($assignment in $itemAssignments) {
+                $target = Get-SafeValue $assignment 'target'
+                if (-not $target) { continue }
+
+                $targetGroupId = Get-SafeValue $target 'groupId'
+                $targetType    = Get-SafeValue $target '@odata.type'
+
+                # Check if assignment targets a parent group
+                if ($targetGroupId -and $parentLookup.ContainsKey($targetGroupId)) {
+                    $friendly = switch ($targetType) {
+                        "#microsoft.graph.groupAssignmentTarget"          { "Include" }
+                        "#microsoft.graph.exclusionGroupAssignmentTarget" { "Exclude" }
+                        default { $targetType }
+                    }
+
+                    $itemDisplayName = Get-SafeValue $item 'displayName'
+                    $itemName        = Get-SafeValue $item 'name'
+                    $displayName     = if ($itemDisplayName) { $itemDisplayName } elseif ($itemName) { $itemName } else { "N/A" }
+                    $itemDesc        = Get-SafeValue $item 'description'
+                    $assignIntent    = Get-SafeValue $assignment 'intent'
+                    $filterId        = Get-SafeValue $target 'deviceAndAppManagementAssignmentFilterId'
+                    $filterType      = Get-SafeValue $target 'deviceAndAppManagementAssignmentFilterType'
+
+                    [void]$matched.Add(@{
+                        id              = Get-SafeValue $item 'id'
+                        displayName     = $displayName
+                        description     = if ($itemDesc) { $itemDesc } else { "" }
+                        assignmentType  = $friendly
+                        intent          = if ($assignIntent) { $assignIntent } else { "" }
+                        filterId        = if ($filterId) { $filterId } else { "" }
+                        filterType      = if ($filterType) { $filterType } else { "" }
+                        inheritedFrom   = $parentLookup[$targetGroupId]
+                        inheritedFromId = $targetGroupId
+                    })
+                }
+            }
+        }
+
+        $result[$cat.Key] = @($matched.ToArray())
+    }
+
+    $result['_errors'] = $_errors
+    return $result
+}
+
+function Get-OrphanedItems {
+    <#
+    .SYNOPSIS
+        Returns all Intune items (policies, apps, scripts, remediations) that have
+        zero assignments — i.e. orphaned items that may be candidates for cleanup.
+    #>
+    $categories = @{
+        configurations  = "/beta/deviceManagement/deviceConfigurations?`$expand=assignments"
+        settingsCatalog = "/beta/deviceManagement/configurationPolicies?`$expand=assignments"
+        applications    = "/beta/deviceAppManagement/mobileApps?`$expand=assignments&`$select=id,displayName,description,assignments"
+        scripts         = "/beta/deviceManagement/deviceManagementScripts?`$expand=assignments"
+        remediations    = "/beta/deviceManagement/deviceHealthScripts?`$expand=assignments"
+    }
+
+    $result  = @{}
+    $_errors = @{}
+
+    foreach ($cat in $categories.GetEnumerator()) {
+        $orphaned = [System.Collections.ArrayList]::new()
+        try {
+            $items = @(Invoke-GraphPaginated -Uri $cat.Value)
+        }
+        catch {
+            Write-Warning "Orphaned check for $($cat.Key) failed: $($_.Exception.Message)"
+            $_errors[$cat.Key] = $_.Exception.Message
+            $result[$cat.Key]  = @()
+            continue
+        }
+
+        foreach ($item in $items) {
+            $itemAssignments = Get-SafeValue $item 'assignments'
+            $assignCount = 0
+            if ($itemAssignments) {
+                $assignCount = @($itemAssignments).Count
+            }
+
+            if ($assignCount -eq 0) {
+                $itemDisplayName = Get-SafeValue $item 'displayName'
+                $itemName        = Get-SafeValue $item 'name'
+                $displayName     = if ($itemDisplayName) { $itemDisplayName } elseif ($itemName) { $itemName } else { "N/A" }
+                $itemDesc        = Get-SafeValue $item 'description'
+
+                [void]$orphaned.Add(@{
+                    id          = Get-SafeValue $item 'id'
+                    displayName = $displayName
+                    description = if ($itemDesc) { $itemDesc } else { "" }
+                })
+            }
+        }
+
+        $result[$cat.Key] = @($orphaned.ToArray())
+    }
+
+    $result['_errors'] = $_errors
+    return $result
+}
+
 function Get-AssignedGroupIds {
     <#
     .SYNOPSIS
@@ -518,6 +678,105 @@ try {
                 catch {
                     Write-Warning "Failed to fetch assigned group IDs: $($_.Exception.Message)"
                     $errBody = ConvertTo-Json -InputObject @{ error = "Failed to fetch assigned group IDs. Please try again." } -Compress
+                    $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 502
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+            }
+            # -- API: group parent groups (nested membership) ----------
+            elseif ($path -match "^/api/groups/([^/]+)/parents$" -and $req.HttpMethod -eq "GET") {
+                $groupId    = $Matches[1]
+                $parsedGuid = [System.Guid]::Empty
+                if (-not [System.Guid]::TryParse($groupId, [ref]$parsedGuid)) {
+                    $resp.StatusCode = 400
+                    $body   = '{"error":"Invalid group ID format. Expected a valid GUID."}'
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                    continue
+                }
+                $groupId = $parsedGuid.ToString()
+                try {
+                    $parents = @(Get-GroupParentGroups -GroupId $groupId)
+                    $json    = ConvertTo-SafeJson -InputObject $parents -AsArray
+                    $buffer  = [System.Text.Encoding]::UTF8.GetBytes($json)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 200
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+                catch {
+                    Write-Warning "Parent group fetch failed for $groupId : $($_.Exception.Message)"
+                    $errBody = ConvertTo-Json -InputObject @{ error = "Failed to fetch parent groups." } -Compress
+                    $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 502
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+            }
+            # -- API: nested group assignments -------------------------
+            elseif ($path -match "^/api/groups/([^/]+)/nested-assignments$" -and $req.HttpMethod -eq "GET") {
+                $groupId    = $Matches[1]
+                $parsedGuid = [System.Guid]::Empty
+                if (-not [System.Guid]::TryParse($groupId, [ref]$parsedGuid)) {
+                    $resp.StatusCode = 400
+                    $body   = '{"error":"Invalid group ID format. Expected a valid GUID."}'
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                    continue
+                }
+                $groupId = $parsedGuid.ToString()
+                try {
+                    $parents = @(Get-GroupParentGroups -GroupId $groupId)
+                    if ($parents.Count -gt 0) {
+                        $nestedResult = Get-NestedGroupAssignments -GroupId $groupId -ParentGroups $parents
+                    } else {
+                        $nestedResult = @{
+                            configurations  = @()
+                            settingsCatalog = @()
+                            applications    = @()
+                            scripts         = @()
+                            remediations    = @()
+                            _errors         = @{}
+                        }
+                    }
+                    $json   = ConvertTo-SafeJson -InputObject $nestedResult
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 200
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+                catch {
+                    Write-Warning "Nested assignment fetch failed for $groupId : $($_.Exception.Message)"
+                    $errBody = ConvertTo-Json -InputObject @{ error = "Failed to fetch nested assignments." } -Compress
+                    $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 502
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+            }
+            # -- API: orphaned items -----------------------------------
+            elseif ($path -eq "/api/orphaned-items" -and $req.HttpMethod -eq "GET") {
+                try {
+                    $orphanedResult = Get-OrphanedItems
+                    $json   = ConvertTo-SafeJson -InputObject $orphanedResult
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 200
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+                catch {
+                    Write-Warning "Orphaned items fetch failed: $($_.Exception.Message)"
+                    $errBody = ConvertTo-Json -InputObject @{ error = "Failed to fetch orphaned items." } -Compress
                     $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
                     $resp.ContentType     = "application/json; charset=utf-8"
                     $resp.ContentLength64 = $buffer.Length
