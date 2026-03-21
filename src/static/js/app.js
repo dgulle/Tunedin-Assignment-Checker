@@ -198,6 +198,15 @@
 
         // SPA mode
         appMode = "spa";
+
+        // Security: warn if SPA mode is running over HTTP (excluding localhost)
+        if (window.location.protocol === "http:" &&
+            window.location.hostname !== "localhost" &&
+            window.location.hostname !== "127.0.0.1") {
+            console.warn("Security warning: running over HTTP. OAuth tokens may be intercepted. Use HTTPS.");
+            alert("Security warning: this page is served over HTTP. Your authentication tokens could be intercepted by an attacker. Please use HTTPS.");
+        }
+
         var savedClientId = localStorage.getItem("iac_clientId");
         var savedTenantId = localStorage.getItem("iac_tenantId");
 
@@ -256,6 +265,12 @@
 
         if (!tenantId || !clientId) {
             alert("Please enter both Tenant ID and Client ID.");
+            return;
+        }
+
+        // Length limits to prevent abuse
+        if (tenantId.length > 253 || clientId.length > 36) {
+            alert("Tenant ID must be at most 253 characters and Client ID must be at most 36 characters.");
             return;
         }
 
@@ -690,15 +705,16 @@
     var INTUNE_BASE = "https://intune.microsoft.com/";
 
     function getIntuneUrl(category, itemId) {
+        var encodedId = itemId ? encodeURIComponent(itemId) : "";
         switch (category) {
             case "configurations":
                 return INTUNE_BASE + "#view/Microsoft_Intune_DeviceSettings/DevicesMenu/~/configuration";
             case "settingsCatalog":
                 return INTUNE_BASE + "#view/Microsoft_Intune_DeviceSettings/DevicesMenu/~/configuration";
             case "applications":
-                return INTUNE_BASE + "#view/Microsoft_Intune_Apps/SettingsMenu/appId/" + itemId;
+                return INTUNE_BASE + "#view/Microsoft_Intune_Apps/SettingsMenu/appId/" + encodedId;
             case "scripts":
-                return INTUNE_BASE + "#view/Microsoft_Intune_DeviceSettings/ConfigureWMPolicyMenuBlade/policyId/" + itemId + "/policyType~/0";
+                return INTUNE_BASE + "#view/Microsoft_Intune_DeviceSettings/ConfigureWMPolicyMenuBlade/policyId/" + encodedId + "/policyType~/0";
             case "remediations":
                 return INTUNE_BASE + "#view/Microsoft_Intune_Enrollment/UNTRemediations";
         }

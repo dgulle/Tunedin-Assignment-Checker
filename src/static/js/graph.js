@@ -19,6 +19,14 @@ var GraphClient = (function () {
         "User.Read.All"
     ];
 
+    var GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    function validateGuid(id, label) {
+        if (!id || !GUID_RE.test(id)) {
+            throw new Error("Invalid " + (label || "ID") + " format. Expected a valid GUID.");
+        }
+    }
+
     var msalInstance = null;
     var activeAccount = null;
     var initPromise = null; // tracks the full init+handleRedirect sequence
@@ -216,8 +224,8 @@ var GraphClient = (function () {
             if (link) {
                 try {
                     var parsed = new URL(link);
-                    if (parsed.hostname !== "graph.microsoft.com") {
-                        console.warn("Ignoring untrusted @odata.nextLink host");
+                    if (parsed.protocol !== "https:" || parsed.hostname !== "graph.microsoft.com") {
+                        console.warn("Ignoring untrusted @odata.nextLink");
                         link = null;
                     }
                 } catch (e) {
@@ -338,6 +346,7 @@ var GraphClient = (function () {
     }
 
     async function getAssignmentsForGroup(groupId) {
+        validateGuid(groupId, "group ID");
         var endpoints = {
             configurations: GRAPH_BASE + "/beta/deviceManagement/deviceConfigurations?$expand=assignments&$select=id,displayName,description,assignments",
             settingsCatalog: GRAPH_BASE + "/beta/deviceManagement/configurationPolicies?$expand=assignments&$select=id,name,description,assignments",
@@ -376,11 +385,13 @@ var GraphClient = (function () {
     }
 
     async function getGroupParents(groupId) {
+        validateGuid(groupId, "group ID");
         var url = GRAPH_BASE + "/v1.0/groups/" + groupId + "/transitiveMemberOf/microsoft.graph.group?$select=id,displayName&$top=999";
         return graphFetchAll(url);
     }
 
     async function getNestedAssignments(groupId) {
+        validateGuid(groupId, "group ID");
         var parents = await getGroupParents(groupId);
         if (!parents || parents.length === 0) {
             return {
@@ -523,6 +534,7 @@ var GraphClient = (function () {
     }
 
     async function getScriptContent(scriptId) {
+        validateGuid(scriptId, "script ID");
         var data = await graphFetch(
             GRAPH_BASE + "/beta/deviceManagement/deviceManagementScripts/" + scriptId
         );
