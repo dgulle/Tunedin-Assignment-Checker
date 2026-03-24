@@ -433,6 +433,27 @@ html, body {
     color: rgba(255, 255, 255, 0.7);
 }
 
+/* Sticky synthetic group list at sidebar bottom */
+.group-list-sticky {
+    list-style: none;
+    padding: 6px 12px 8px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.group-list-sticky .group-item-synthetic {
+    padding: 6px 10px;
+    margin-bottom: 2px;
+}
+
+.group-list-sticky .group-item-synthetic:last-child {
+    margin-bottom: 0;
+}
+
+.group-list-sticky .group-item-name {
+    font-size: 12px;
+}
+
 .group-list-separator {
     height: 1px;
     background: var(--border);
