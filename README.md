@@ -19,11 +19,13 @@ A web dashboard that connects to Microsoft Intune via the Microsoft Graph API an
   - **Device Configurations** — Configuration profiles
   - **Settings Catalog** — Settings Catalog policies
   - **Applications** — Assigned apps (required, available, uninstall)
-  - **Scripts** — PowerShell device management scripts (with content preview)
+  - **Scripts** — Platform scripts. Click the 👁 eye icon on any script card to view its full contents in a preview panel.
   - **Remediations** — Proactive remediation (health) scripts
 - See assignment type (Include / Exclude / All Users / All Devices), intent, and filter information at a glance with colour-coded badges
 
 ![Assignments](https://github.com/user-attachments/assets/503d2ee7-9a4b-42b7-80d5-bbf411b82664)
+
+![Orphaned Items](https://github.com/user-attachments/assets/4ab56781-bebd-45e6-95bd-9641ca955562)
   
 - **Nested group assignments** — when a group is nested inside another group, inherited assignments from parent groups are automatically discovered and shown with an "Inherited: Parent Group Name" badge, so you can see exactly where each assignment originates. A **Nested Groups** toggle in the header lets you show or hide inherited assignments.
 
