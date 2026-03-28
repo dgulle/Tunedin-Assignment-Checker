@@ -10,6 +10,9 @@ A web dashboard that connects to Microsoft Intune via the Microsoft Graph API an
 - Filter to show only groups that have Intune assignments
 - **Assignment count per group** — each group displays the total number of directly-targeted assignments (excludes All Devices/All Users)
 - **Assignment count range filter** — narrow down the group list by assignment count (e.g. show only groups with 1–10 assignments)
+
+![Assignment Filter](https://github.com/user-attachments/assets/576e3ce1-7a7e-489b-9856-5deee0d83c71)
+  
 - **Live connection status** — a badge in the header shows who you're signed in as
 
 - View Intune assignments per group across five categories:
@@ -115,30 +118,6 @@ Use the app directly from [http://tunedin.zerototrust.tech/](http://tunedin.zero
 
 > If you self-host the app on a different domain, update the Redirect URI in your app registration to match.
 
-
-
-## Project Structure
-
-```
-.github/
-└── workflows/
-    └── deploy-pages.yml              # GitHub Actions workflow (deploys to GitHub Pages on push to main)
-
-src/
-├── TunedinAssignmentChecker.ps1   # PowerShell backend (auth, HTTP server, Graph queries)
-├── static/
-│   ├── css/
-│   │   └── style.css             # UI theme and layout styles
-│   ├── img/
-│   │   └── logo.svg              # Shield logo
-│   └── js/
-│       ├── app.js                # Frontend logic (dual-mode: backend + SPA)
-│       └── graph.js              # MSAL.js auth and Graph API client (SPA mode)
-└── templates/
-    └── index.html                # Single-page application template (backend mode)
-
-index.html                        # Root HTML entry point (GitHub Pages / SPA mode)
-```
 
 ## Permissions
 
