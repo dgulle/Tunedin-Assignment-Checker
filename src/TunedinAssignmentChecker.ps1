@@ -182,6 +182,34 @@ function Get-SafeValue {
     return $null
 }
 
+function Get-ItemPlatform {
+    param([object]$Item, [string]$CategoryKey)
+
+    if ($CategoryKey -eq 'scripts' -or $CategoryKey -eq 'remediations') {
+        return "Windows"
+    }
+    if ($CategoryKey -eq 'settingsCatalog') {
+        $platforms = Get-SafeValue $Item 'platforms'
+        if ($platforms) {
+            $p = "$platforms".ToLower()
+            if ($p -match 'windows') { return "Windows" }
+            if ($p -match 'ios')     { return "iOS" }
+            if ($p -match 'macos')   { return "macOS" }
+            if ($p -match 'android') { return "Android" }
+        }
+        return ""
+    }
+    $odataType = Get-SafeValue $Item '@odata.type'
+    if ($odataType) {
+        $t = "$odataType".ToLower()
+        if ($t -match 'ios|iphone')                   { return "iOS" }
+        if ($t -match 'android')                      { return "Android" }
+        if ($t -match 'windows|win32|microsoftstore') { return "Windows" }
+        if ($t -match 'macos')                        { return "macOS" }
+    }
+    return ""
+}
+
 function Get-AssignmentsForGroup {
     param([string]$GroupId)
 
@@ -249,6 +277,7 @@ function Get-AssignmentsForGroup {
                         intent          = if ($assignIntent) { $assignIntent } else { "" }
                         filterId        = if ($filterId) { $filterId } else { "" }
                         filterType      = if ($filterType) { $filterType } else { "" }
+                        platform        = Get-ItemPlatform -Item $item -CategoryKey $cat.Key
                     })
                     # Don't break — same item may match as both group + All Devices/Users
                 }
@@ -353,6 +382,7 @@ function Get-NestedGroupAssignments {
                         filterType      = if ($filterType) { $filterType } else { "" }
                         inheritedFrom   = $parentLookup[$targetGroupId]
                         inheritedFromId = $targetGroupId
+                        platform        = Get-ItemPlatform -Item $item -CategoryKey $cat.Key
                     })
                 }
             }
@@ -411,6 +441,7 @@ function Get-OrphanedItems {
                     id          = Get-SafeValue $item 'id'
                     displayName = $displayName
                     description = if ($itemDesc) { $itemDesc } else { "" }
+                    platform    = Get-ItemPlatform -Item $item -CategoryKey $cat.Key
                 })
             }
         }
@@ -523,6 +554,7 @@ function Get-AssignmentsByTargetType {
                     intent          = if ($assignIntent) { $assignIntent } else { "" }
                     filterId        = if ($filterId) { $filterId } else { "" }
                     filterType      = if ($filterType) { $filterType } else { "" }
+                    platform        = Get-ItemPlatform -Item $item -CategoryKey $cat.Key
                 })
             }
         }
