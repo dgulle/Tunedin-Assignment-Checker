@@ -34,6 +34,8 @@ A web dashboard that connects to Microsoft Intune via the Microsoft Graph API an
 
 - **Orphaned items detection** — a dedicated **Orphaned Items** view lists all Intune items (configurations, settings catalog policies, applications, scripts, and remediations) that have zero assignments, making it easy to identify stale items for cleanup. Includes a **CSV export** for quick reporting.
 
+  ![Orphaned Items](https://github.com/user-attachments/assets/1474e9b0-214c-4538-9c27-d281869a229a)
+
 - **Export to CSV** — download all assignments for the selected group as a CSV file for offline review or reporting
 - Direct deep links to policies and apps in the Intune portal
 - **Tenant switching** — change tenants without needing to clear your browser history
