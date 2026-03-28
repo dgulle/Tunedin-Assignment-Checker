@@ -1111,6 +1111,16 @@ html, body {
     color: #FCD34D;
 }
 
+.badge-platform {
+    background: #DBEAFE;
+    color: #1E40AF;
+}
+
+[data-theme="dark"] .badge-platform {
+    background: #1E3A5F;
+    color: #93C5FD;
+}
+
 /* Orphaned card styling */
 .orphaned-card::before {
     background: linear-gradient(180deg, #F59E0B 0%, #EF4444 100%);

@@ -771,6 +771,9 @@
             if (item.inheritedFrom) {
                 badges.push('<span class="badge badge-inherited" title="Inherited via nested group membership">Inherited: ' + escapeHtml(item.inheritedFrom) + '</span>');
             }
+            if (item.platform) {
+                badges.push('<span class="badge badge-platform">' + escapeHtml(item.platform) + '</span>');
+            }
 
             var url = getIntuneUrl(activeCategory, item.id);
             var linkIcon = '<svg class="link-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
@@ -883,7 +886,10 @@
                     '<div class="card-actions"></div>' +
                 '</div>' +
                 (item.description ? '<div class="card-desc">' + escapeHtml(item.description) + '</div>' : '') +
-                '<div class="card-meta"><span class="badge badge-orphaned">No Assignments</span></div>';
+                '<div class="card-meta">' +
+                    (item.platform ? '<span class="badge badge-platform">' + escapeHtml(item.platform) + '</span>' : '') +
+                    '<span class="badge badge-orphaned">No Assignments</span>' +
+                '</div>';
 
             var cardActions = card.querySelector(".card-actions");
             var itemName = item.displayName || "Unnamed";
@@ -896,7 +902,7 @@
     function exportOrphanedCsv() {
         if (!orphanedData) return;
 
-        var rows = [["Category", "Name", "Description"]];
+        var rows = [["Category", "Name", "Description", "Platform"]];
 
         CATEGORIES.forEach(function (c) {
             var items = orphanedData[c.key] || [];
@@ -905,7 +911,8 @@
                 rows.push([
                     label,
                     item.displayName || "",
-                    item.description || ""
+                    item.description || "",
+                    item.platform || ""
                 ]);
             });
         });
@@ -999,7 +1006,7 @@
         if (!assignmentData) return;
 
         var groupName = selectedGroupName.textContent || "Group";
-        var rows = [["Category", "Name", "Description", "Assignment Type", "Intent", "Filter Type", "Inherited From"]];
+        var rows = [["Category", "Name", "Description", "Platform", "Assignment Type", "Intent", "Filter Type", "Inherited From"]];
 
         CATEGORIES.forEach(function (c) {
             var items = getFilteredItems(c.key);
@@ -1009,6 +1016,7 @@
                     label,
                     item.displayName || "",
                     item.description || "",
+                    item.platform || "",
                     item.assignmentType || "",
                     item.intent || "",
                     item.filterType && item.filterType !== "none" ? item.filterType : "",
