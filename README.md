@@ -6,34 +6,32 @@ A web dashboard that connects to Microsoft Intune via the Microsoft Graph API an
 
 ## Features
 
-- Browse all Entra ID groups in a searchable sidebar with **group type badges** — each group shows a **Dynamic** or **Assigned** label so you can quickly identify its membership type
+- Browse all Entra ID groups in a searchable sidebar — each group shows a **Dynamic** or **Assigned** badge so you can quickly identify its membership type
 - Filter to show only groups that have Intune assignments
 - **Assignment count per group** — each group displays the total number of directly-targeted assignments (excludes All Devices/All Users)
-- **Assignment count range filter** — filter the group list by assignment count using a collapsible min/max panel (e.g. show only groups with 1–10 assignments)
-- **Live connection status** — a colour-coded badge in the header shows your current authentication state and signed-in username
-- **Auto-selects first category with results** — when you click a group, the first non-empty category tab is automatically selected so you see data immediately
+- **Assignment count range filter** — narrow down the group list by assignment count (e.g. show only groups with 1–10 assignments)
+- **Live connection status** — a badge in the header shows who you're signed in as
 
 - View Intune assignments per group across five categories:
-  - **Device Configurations** - Configuration profiles
-  - **Settings Catalog** - Settings Catalog policies
-  - **Applications** - Assigned apps (required, available, uninstall)
-  - **Scripts** - PowerShell device management scripts (with content preview)
-  - **Remediations** - Proactive remediation (health) scripts
-- See assignment type (Include / Exclude / All Users / All Devices) and filter information with colour-coded badges for each intent (Required, Available, Uninstall) and device/app management filters
-- **Nested group assignments** - when a group is nested inside another group, inherited assignments from parent groups are automatically discovered and displayed with an "Inherited: Parent Group Name" badge, so you can see exactly where each assignment originates. A **Nested Groups** toggle in the header lets you show or hide inherited assignments.
+  - **Device Configurations** — Configuration profiles
+  - **Settings Catalog** — Settings Catalog policies
+  - **Applications** — Assigned apps (required, available, uninstall)
+  - **Scripts** — PowerShell device management scripts (with content preview)
+  - **Remediations** — Proactive remediation (health) scripts
+- See assignment type (Include / Exclude / All Users / All Devices), intent, and filter information at a glance with colour-coded badges
+- **Nested group assignments** — when a group is nested inside another group, inherited assignments from parent groups are automatically discovered and shown with an "Inherited: Parent Group Name" badge, so you can see exactly where each assignment originates. A **Nested Groups** toggle in the header lets you show or hide inherited assignments.
 
-- **All Devices & All Users groups** - dedicated entries at the bottom of the group list let you see every policy, app, script, and remediation assigned to All Devices or All Users across all categories in one click
-- **Show/Hide All Devices & All Users** - global toggle buttons in the header to show or hide All Devices and All Users assignments across all groups, reducing clutter in large tenants
-- **Dynamic membership rule display** - when selecting a dynamic group, the membership rule query is shown below the group name for quick reference
-- **Copy to clipboard** - hover-to-reveal copy buttons on group names, descriptions, dynamic membership rules, and assignment card names for fast copy/paste
+- **All Devices & All Users groups** — dedicated entries at the bottom of the group list let you see every policy, app, script, and remediation assigned to All Devices or All Users across all categories in one click
+- **Show/Hide All Devices & All Users** — global toggle buttons in the header to show or hide those assignments across all groups, reducing clutter in large tenants
+- **Dynamic membership rule display** — when selecting a dynamic group, the membership rule query is shown below the group name for quick reference
+- **Copy to clipboard** — hover-to-reveal copy buttons on group names, descriptions, dynamic membership rules, and assignment card names for fast copy/paste
 
-- **Orphaned items detection** - a dedicated **Orphaned Items** view lists all Intune items (configurations, settings catalog policies, applications, scripts, and remediations) that have zero assignments, making it easy to identify stale items for cleanup after group consolidation. Includes a **CSV export** for quick reporting.
+- **Orphaned items detection** — a dedicated **Orphaned Items** view lists all Intune items (configurations, settings catalog policies, applications, scripts, and remediations) that have zero assignments, making it easy to identify stale items for cleanup. Includes a **CSV export** for quick reporting.
 
-- **Export to CSV** — download all assignments for the selected group as a CSV file for offline review or troubleshooting. Columns include Category, Name, Description, Platform, Assignment Type, Intent, Filter Type, and Inherited From. Orphaned Items also supports CSV export (Category, Name, Description, Platform). All exports include CSV injection prevention.
+- **Export to CSV** — download all assignments for the selected group as a CSV file for offline review or reporting
 - Direct deep links to policies and apps in the Intune portal
-- **Tenant switching** - change Tenant ID and Client ID without needing to clear your browser history
-- **Resilient Graph API handling** — automatic retry with exponential backoff on throttling (HTTP 429) and transient server errors (HTTP 5xx); the `Retry-After` header is respected when present. Individual requests time out after 30 seconds. Partial results are shown if individual categories fail.
-- **Input validation** — the SPA setup screen validates Tenant ID (GUID or domain format, max 253 chars) and Client ID (GUID format, max 36 chars) before allowing sign-in
+- **Tenant switching** — change tenants without needing to clear your browser history
+- **Reliable data loading** — the app handles temporary Microsoft Graph issues automatically and still shows results even if one category encounters an error
 - Dark mode with system preference detection
 - Responsive design for desktop, tablet, and mobile
 
@@ -158,26 +156,17 @@ All permissions are **read-only**. The app cannot modify your Intune environment
 
 ## Large Tenant Support
 
-For tenants with thousands of groups (6,000+), the app includes:
+For tenants with thousands of groups, the app is built to stay responsive:
 
-- **Automatic retry** — Graph API requests that fail with HTTP 429 (throttled) or 5xx (server error) are automatically retried up to 3 times with exponential backoff (2 s, 4 s, 8 s). The `Retry-After` header is respected when present. Individual requests time out after 30 seconds.
-- **Partial results** — if one category (e.g. Applications) fails after retries, the other four categories still display their results. The failed category's tab shows `!` and an error banner explains the issue. Re-selecting the group retries the fetch.
-- **Assignment count filter** — quickly narrow down the group list using the min/max assignment count filter to find the groups you care about.
-
-## Deployment
-
-The live site at [tunedin.zerototrust.tech](https://tunedin.zerototrust.tech/) is deployed automatically via **GitHub Actions**. The workflow (`.github/workflows/deploy-pages.yml`) triggers on every push to `main` and on manual `workflow_dispatch`. It uploads the repository contents as a GitHub Pages artifact, injects the `CNAME` file for the custom domain, and adds a `.nojekyll` marker to bypass Jekyll processing. A concurrency group ensures only one deployment runs at a time.
+- **Stays fast in large tenants** — the group list handles thousands of groups without slowing down, and the assignment count filter helps you quickly find what you're looking for
+- **Handles temporary issues gracefully** — if Microsoft Graph is temporarily slow or unavailable, the app retries automatically and still displays results for any categories that loaded successfully
+- **Partial results over no results** — if one category (e.g. Applications) can't be loaded, the other four still display. A `!` on the affected tab lets you know, and re-selecting the group will retry.
 
 ## Security Notes
 
-- **PowerShell mode:** Authentication uses interactive delegated flow — no secrets are stored anywhere
-- **SPA mode:** Authentication uses MSAL.js with PKCE (auth code flow) — no client secret needed. Only your Client ID and Tenant ID are stored in localStorage (these are not secrets). MSAL tokens are stored in **sessionStorage** and are automatically cleared when you close the browser tab.
-- **30-minute idle timeout** — in SPA mode the app monitors activity (mouse, keyboard, scroll, touch) and automatically signs you out after 30 minutes of inactivity
-- **HTTP security warning** — if the SPA is loaded over plain HTTP on a non-localhost domain, a prominent alert warns that authentication tokens could be intercepted
-- **Security headers** — the PowerShell backend sets strict security headers on every response: `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, and `Permissions-Policy` (disables geolocation, camera, microphone, etc.)
-- **CSRF protection** — the backend logout endpoint validates the `Origin` / `Referer` header before disconnecting from Microsoft Graph
-- **Pagination URL validation** — in SPA mode, Graph API `@odata.nextLink` URLs are validated (protocol and hostname) before following, preventing token leakage to unexpected hosts
-- The app only requests **read** permissions; it cannot modify your Intune environment
-- All Intune and Entra data should be treated as sensitive — avoid using the app on shared/public computers
-- Press **Ctrl+C** to stop the PowerShell server; the script disconnects from Microsoft Graph automatically
-- In SPA mode, click **Sign out** to clear your session
+- **Read-only** — the app only requests read permissions and cannot make any changes to your Intune environment
+- **No secrets stored** — in PowerShell mode, no credentials are saved anywhere; in SPA mode, only your Client ID and Tenant ID are remembered in your browser (these are not secrets)
+- **Auto sign-out** — in SPA mode, the app automatically signs you out after 30 minutes of inactivity
+- Treat all Intune and Entra data as sensitive — avoid using the app on shared or public computers
+- Press **Ctrl+C** to stop the PowerShell server; it disconnects from Microsoft Graph automatically
+- In SPA mode, click **Sign out** to end your session
