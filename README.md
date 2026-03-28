@@ -76,6 +76,8 @@ The script will:
 
 Use the app directly from [http://tunedin.zerototrust.tech/](http://tunedin.zerototrust.tech/) - no PowerShell or local install needed. The app runs entirely in your browser using MSAL.js to authenticate directly with Microsoft Graph.
 
+![Login Screen](https://github.com/user-attachments/assets/d7b03c0c-fadc-4ed5-bed3-5219c5c271e9)
+
 **This option requires you to create your own Entra ID app registration** in your tenant.
 
 #### Setting Up Your App Registration
