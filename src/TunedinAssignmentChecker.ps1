@@ -204,7 +204,7 @@ function Get-ItemPlatform {
         $t = "$odataType".ToLower()
         if ($t -match 'ios|iphone')                   { return "iOS" }
         if ($t -match 'android')                      { return "Android" }
-        if ($t -match 'windows|win32|microsoftstore') { return "Windows" }
+        if ($t -match 'windows|win32|microsoftstore|winget') { return "Windows" }
         if ($t -match 'macos')                        { return "macOS" }
     }
     return ""

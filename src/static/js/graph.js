@@ -284,7 +284,7 @@ var GraphClient = (function () {
         var odataType = (item["@odata.type"] || "").toLowerCase();
         if (odataType.indexOf("ios") !== -1 || odataType.indexOf("iphone") !== -1) return "iOS";
         if (odataType.indexOf("android") !== -1) return "Android";
-        if (odataType.indexOf("windows") !== -1 || odataType.indexOf("win32") !== -1 || odataType.indexOf("microsoftstore") !== -1) return "Windows";
+        if (odataType.indexOf("windows") !== -1 || odataType.indexOf("win32") !== -1 || odataType.indexOf("microsoftstore") !== -1 || odataType.indexOf("winget") !== -1) return "Windows";
         if (odataType.indexOf("macos") !== -1) return "macOS";
         return "";
     }
