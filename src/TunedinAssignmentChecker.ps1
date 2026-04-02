@@ -181,6 +181,20 @@ function Invoke-GraphPaginated {
         } else {
             $nextUri = $null
         }
+
+        # Validate nextLink to prevent token leakage to untrusted hosts
+        if ($nextUri) {
+            try {
+                $parsedLink = [System.Uri]::new($nextUri)
+                if ($parsedLink.Scheme -ne 'https' -or $parsedLink.Host -ne 'graph.microsoft.com') {
+                    Write-Warning "Ignoring untrusted @odata.nextLink host: $($parsedLink.Host)"
+                    $nextUri = $null
+                }
+            } catch {
+                Write-Warning "Ignoring malformed @odata.nextLink"
+                $nextUri = $null
+            }
+        }
     }
 
     # Return items through the pipeline individually.
@@ -640,6 +654,35 @@ function Set-SecurityHeaders {
     $csp = "default-src 'none'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; img-src 'self'; " +
            "connect-src 'self' https://graph.microsoft.com https://login.microsoftonline.com; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
     $Response.Headers.Set("Content-Security-Policy", $csp)
+
+    # CORS: restrict cross-origin requests to same localhost origin
+    $Response.Headers.Set("Access-Control-Allow-Origin", "http://localhost:$Port")
+    $Response.Headers.Set("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS")
+    $Response.Headers.Set("Access-Control-Allow-Headers", "Content-Type")
+}
+
+function Test-ApiOrigin {
+    <#
+    .SYNOPSIS
+        Validates that an API request originates from the expected localhost origin.
+        Returns $true if valid, $false if the request should be rejected.
+    #>
+    param(
+        [Parameter(Mandatory)][System.Net.HttpListenerRequest]$Request
+    )
+
+    $origin  = $Request.Headers["Origin"]
+    $referer = $Request.Headers["Referer"]
+    $expectedOrigin = "http://localhost:$Port"
+
+    if ($origin) {
+        return ($origin -eq $expectedOrigin)
+    } elseif ($referer) {
+        return $referer.StartsWith("$expectedOrigin/")
+    }
+    # Browser-initiated requests always send Origin or Referer;
+    # allow requests with neither (e.g. curl, PowerShell, direct browser navigation)
+    return $true
 }
 
 # -----------------------------------------------------------------------------
@@ -683,6 +726,10 @@ Write-Host "  Web server running at http://localhost:$Port          " -Foregroun
 Write-Host "  Press Ctrl+C to stop.                                " -ForegroundColor Cyan
 Write-Host "  ======================================================" -ForegroundColor Cyan
 Write-Host ""
+Write-Host "  NOTE: The server uses HTTP (not HTTPS). This is acceptable" -ForegroundColor Yellow
+Write-Host "  for localhost-only access, but traffic could be observed by" -ForegroundColor Yellow
+Write-Host "  other processes on this machine with elevated privileges." -ForegroundColor Yellow
+Write-Host ""
 
 # Open default browser
 try {
@@ -695,6 +742,11 @@ catch {
 # -----------------------------------------------------------------------------
 # 8. Request loop
 # -----------------------------------------------------------------------------
+
+# Rate limiting: sliding window of request timestamps
+$script:rateLimitTimestamps = [System.Collections.ArrayList]::new()
+$script:rateLimitMax        = 120   # max requests per window
+$script:rateLimitWindowSec  = 60    # window size in seconds
 
 try {
     while ($listener.IsListening) {
@@ -709,6 +761,44 @@ try {
 
         try {
             Set-SecurityHeaders -Response $resp
+
+            # -- Rate limiting -----------------------------------------
+            $nowTicks = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            $cutoff   = $nowTicks - $script:rateLimitWindowSec
+            $script:rateLimitTimestamps = [System.Collections.ArrayList]@(
+                $script:rateLimitTimestamps | Where-Object { $_ -gt $cutoff }
+            )
+            if ($script:rateLimitTimestamps.Count -ge $script:rateLimitMax) {
+                $resp.StatusCode = 429
+                $body   = '{"error":"Too many requests. Please try again later."}'
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                $resp.ContentType     = "application/json; charset=utf-8"
+                $resp.ContentLength64 = $buffer.Length
+                $resp.Headers.Set("Retry-After", "10")
+                $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                $resp.OutputStream.Close()
+                continue
+            }
+            [void]$script:rateLimitTimestamps.Add($nowTicks)
+
+            # -- CORS preflight ----------------------------------------
+            if ($req.HttpMethod -eq "OPTIONS") {
+                $resp.StatusCode = 204
+                $resp.OutputStream.Close()
+                continue
+            }
+
+            # -- Origin validation for API routes ----------------------
+            if ($path.StartsWith("/api/") -and -not (Test-ApiOrigin -Request $req)) {
+                $resp.StatusCode = 403
+                $body   = '{"error":"Forbidden: invalid origin."}'
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                $resp.ContentType     = "application/json; charset=utf-8"
+                $resp.ContentLength64 = $buffer.Length
+                $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                $resp.OutputStream.Close()
+                continue
+            }
 
             # -- API: status (backend mode detection) ------------------
             if ($path -eq "/api/status" -and ($req.HttpMethod -eq "GET" -or $req.HttpMethod -eq "HEAD")) {
@@ -963,31 +1053,7 @@ try {
             }
             # -- API: logout -----------------------------------------
             elseif ($path -eq "/api/logout" -and $req.HttpMethod -eq "POST") {
-                # CSRF protection: validate Origin header, fall back to Referer
-                $origin         = $req.Headers["Origin"]
-                $referer        = $req.Headers["Referer"]
-                $expectedOrigin = "http://localhost:$Port"
-                $csrfValid      = $false
-
-                if ($origin) {
-                    # Origin header present — must match exactly
-                    $csrfValid = ($origin -eq $expectedOrigin)
-                } elseif ($referer) {
-                    # No Origin header — fall back to Referer prefix check
-                    $csrfValid = $referer.StartsWith("$expectedOrigin/")
-                }
-                # If neither header is present, reject the request
-
-                if (-not $csrfValid) {
-                    $resp.StatusCode = 403
-                    $body   = '{"error":"Forbidden: invalid origin."}'
-                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
-                    $resp.ContentType     = "application/json; charset=utf-8"
-                    $resp.ContentLength64 = $buffer.Length
-                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
-                    $resp.OutputStream.Close()
-                    continue
-                }
+                # Origin validation is handled globally above for all /api/* routes
                 try {
                     Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
                     Write-Host "  User logged out via web UI." -ForegroundColor Yellow
