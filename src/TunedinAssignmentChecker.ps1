@@ -27,8 +27,40 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+$script:CurrentVersion = "1.0.0"
+$script:GitHubRepo     = "dgulle/Tunedin-Assignment-Checker"
+
 # -----------------------------------------------------------------------------
-# 1. Ensure the Microsoft Graph Authentication module is available
+# 1. Check for updates via GitHub Releases
+# -----------------------------------------------------------------------------
+
+function Test-ForUpdate {
+    try {
+        $releaseUrl = "https://api.github.com/repos/$($script:GitHubRepo)/releases/latest"
+        $headers = @{ "User-Agent" = "TunedinAssignmentChecker/$($script:CurrentVersion)" }
+        $release = Invoke-RestMethod -Uri $releaseUrl -Headers $headers -TimeoutSec 5 -ErrorAction Stop
+
+        $latestTag = ($release.tag_name -replace '^v', '').Trim()
+        $current   = $script:CurrentVersion.Trim()
+
+        if ([System.Version]$latestTag -gt [System.Version]$current) {
+            Write-Host ""
+            Write-Host "  -------------------------------------------------------" -ForegroundColor Yellow
+            Write-Host "  A new version is available: v$latestTag (current: v$current)" -ForegroundColor Yellow
+            Write-Host "  Download: $($release.html_url)" -ForegroundColor Yellow
+            Write-Host "  -------------------------------------------------------" -ForegroundColor Yellow
+            Write-Host ""
+        }
+    }
+    catch {
+        # Silently ignore update check failures (no internet, rate limit, etc.)
+    }
+}
+
+Test-ForUpdate
+
+# -----------------------------------------------------------------------------
+# 2. Ensure the Microsoft Graph Authentication module is available
 # -----------------------------------------------------------------------------
 
 $moduleName = "Microsoft.Graph.Authentication"
@@ -50,7 +82,7 @@ if (-not (Get-Module -ListAvailable -Name $moduleName)) {
 Import-Module $moduleName -ErrorAction Stop
 
 # -----------------------------------------------------------------------------
-# 2. Connect to Microsoft Graph with required scopes (interactive sign-in)
+# 3. Connect to Microsoft Graph with required scopes (interactive sign-in)
 # -----------------------------------------------------------------------------
 
 $requiredScopes = @(
@@ -90,7 +122,7 @@ catch {
 }
 
 # -----------------------------------------------------------------------------
-# 3. Graph API helper functions
+# 4. Graph API helper functions
 # -----------------------------------------------------------------------------
 
 function Invoke-GraphPaginated {
@@ -567,7 +599,7 @@ function Get-AssignmentsByTargetType {
 }
 
 # -----------------------------------------------------------------------------
-# 4. JSON serialization helper
+# 5. JSON serialization helper
 # -----------------------------------------------------------------------------
 
 function ConvertTo-SafeJson {
@@ -611,7 +643,7 @@ function Set-SecurityHeaders {
 }
 
 # -----------------------------------------------------------------------------
-# 5. Resolve static file paths
+# 6. Resolve static file paths
 # -----------------------------------------------------------------------------
 
 $scriptDir = $PSScriptRoot
@@ -631,7 +663,7 @@ $mimeTypes = @{
 }
 
 # -----------------------------------------------------------------------------
-# 6. Start the HTTP listener
+# 7. Start the HTTP listener
 # -----------------------------------------------------------------------------
 
 $listener = New-Object System.Net.HttpListener
@@ -661,7 +693,7 @@ catch {
 }
 
 # -----------------------------------------------------------------------------
-# 7. Request loop
+# 8. Request loop
 # -----------------------------------------------------------------------------
 
 try {
