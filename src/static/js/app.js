@@ -29,6 +29,7 @@
     var categoryTabs      = document.getElementById("categoryTabs");
     var cardGrid          = document.getElementById("cardGrid");
     var categoryEmpty     = document.getElementById("categoryEmpty");
+    var platformFilter    = document.getElementById("platformFilter");
 
     var connectionBadge = document.getElementById("connectionBadge");
     var badgeDot        = connectionBadge.querySelector(".badge-dot");
@@ -63,6 +64,7 @@
     var orphanedData       = null;  // orphaned items (no assignments)
     var showNested         = true;  // toggle for nested group assignments
     var activeCategory     = "configurations";
+    var activePlatformFilter = null; // null = All, or "Android"/"iOS"/"Windows"/"macOS"
 
     // Mode: "backend" or "spa"
     var appMode = "backend";
@@ -171,10 +173,22 @@
         activeCategory = tab.dataset.category;
         highlightTab();
         if (activeGroupId === "__orphaned__") {
+            updateOrphanedCounts();
             renderOrphanedCards();
         } else {
             renderCards();
         }
+    });
+
+    platformFilter.addEventListener("click", function (e) {
+        var btn = e.target.closest(".platform-btn");
+        if (!btn) return;
+        activePlatformFilter = btn.dataset.platform || null;
+        platformFilter.querySelectorAll(".platform-btn").forEach(function (b) {
+            b.classList.toggle("active", b === btn);
+        });
+        updateOrphanedCounts();
+        renderOrphanedCards();
     });
 
     // Setup screen connect button
@@ -551,6 +565,13 @@
         activeGroupId = group.id;
         nestedData = null;
         orphanedData = null;
+        if (group.id !== "__orphaned__") {
+            activePlatformFilter = null;
+            platformFilter.style.display = "none";
+            platformFilter.querySelectorAll(".platform-btn").forEach(function (b) {
+                b.classList.toggle("active", !b.dataset.platform);
+            });
+        }
         renderGroupList();
         showPanel("loading");
 
@@ -567,6 +588,7 @@
                 updateOrphanedCounts();
                 activeCategory = getFirstNonEmptyOrphanedCategory() || "configurations";
                 highlightTab();
+                platformFilter.style.display = "flex";
                 renderOrphanedCards();
                 showPanel("assignments");
                 return;
@@ -815,6 +837,14 @@
 
     // ── Orphaned items helpers ─────────────────────────────────────────
 
+    function getFilteredOrphanedItems(key) {
+        var items = orphanedData[key] || [];
+        if (!activePlatformFilter) return items;
+        return items.filter(function (item) {
+            return item.platform === activePlatformFilter;
+        });
+    }
+
     function updateOrphanedCounts() {
         if (!orphanedData) return;
         var errors = orphanedData._errors || {};
@@ -825,7 +855,7 @@
                     el.textContent = "!";
                     el.title = "Failed to load — click to retry";
                 } else {
-                    el.textContent = (orphanedData[c.key] || []).length;
+                    el.textContent = getFilteredOrphanedItems(c.key).length;
                     el.title = "";
                 }
             }
@@ -845,7 +875,7 @@
 
         var errors = orphanedData._errors || {};
         var categoryError = errors[activeCategory];
-        var items = orphanedData[activeCategory] || [];
+        var items = getFilteredOrphanedItems(activeCategory);
         cardGrid.innerHTML = "";
 
         // Show error banner if this category failed
@@ -905,7 +935,7 @@
         var rows = [["Category", "Name", "Description", "Platform"]];
 
         CATEGORIES.forEach(function (c) {
-            var items = orphanedData[c.key] || [];
+            var items = getFilteredOrphanedItems(c.key);
             var label = c.key.replace(/([A-Z])/g, " $1").replace(/^./, function (s) { return s.toUpperCase(); });
             items.forEach(function (item) {
                 rows.push([

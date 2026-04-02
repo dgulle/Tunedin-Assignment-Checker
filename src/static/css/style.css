@@ -931,6 +931,51 @@ html, body {
     color: #fff;
 }
 
+/* ── Platform Filter ─────────────────────────────────────────────────────── */
+
+.platform-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.platform-filter-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-right: 4px;
+}
+
+.platform-btn {
+    padding: 5px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 20px;
+    background: var(--surface);
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.platform-btn:hover {
+    border-color: var(--primary-lighter);
+    color: var(--primary-light);
+    background: var(--surface-hover);
+}
+
+.platform-btn.active {
+    border-color: var(--primary);
+    background: var(--primary);
+    color: #fff;
+}
+
 /* ── Card Grid ───────────────────────────────────────────────────────────── */
 
 .card-grid {
