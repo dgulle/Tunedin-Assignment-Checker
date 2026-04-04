@@ -496,6 +496,41 @@ function Get-OrphanedItems {
     }
 
     $result['_errors'] = $_errors
+
+    # Compute unassigned groups (groups with no Intune assignments)
+    try {
+        $allGroupsList  = @(Get-AllGroups)
+        $assignedResult = Get-AssignedGroupIds
+        $assignedSet    = @{}
+        foreach ($gid in $assignedResult.ids) { $assignedSet[$gid] = $true }
+
+        $unassigned = [System.Collections.ArrayList]::new()
+        foreach ($grp in $allGroupsList) {
+            $grpId = Get-SafeValue $grp 'id'
+            if ($grpId -and -not $assignedSet.ContainsKey($grpId)) {
+                $grpDisplayName = Get-SafeValue $grp 'displayName'
+                $grpDesc        = Get-SafeValue $grp 'description'
+                $grpTypes       = Get-SafeValue $grp 'groupTypes'
+                $groupType      = "Assigned"
+                if ($grpTypes -and ($grpTypes -contains "DynamicMembership")) {
+                    $groupType = "Dynamic"
+                }
+                [void]$unassigned.Add(@{
+                    id          = $grpId
+                    displayName = if ($grpDisplayName) { $grpDisplayName } else { "Unnamed" }
+                    description = if ($grpDesc) { $grpDesc } else { "" }
+                    groupType   = $groupType
+                })
+            }
+        }
+        $result['groups'] = @($unassigned.ToArray())
+    }
+    catch {
+        Write-Warning "Unassigned groups check failed: $($_.Exception.Message)"
+        $result['_errors']['groups'] = $_.Exception.Message
+        $result['groups']  = @()
+    }
+
     return $result
 }
 

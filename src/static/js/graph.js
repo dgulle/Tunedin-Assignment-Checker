@@ -481,7 +481,7 @@ var GraphClient = (function () {
         return data;
     }
 
-    async function getOrphanedItems() {
+    async function getOrphanedItems(allGroups, assignedGroupIdSet) {
         var endpoints = {
             configurations: GRAPH_BASE + "/beta/deviceManagement/deviceConfigurations?$expand=assignments&$select=id,displayName,description,assignments",
             settingsCatalog: GRAPH_BASE + "/beta/deviceManagement/configurationPolicies?$expand=assignments&$select=id,name,description,assignments,platforms",
@@ -527,6 +527,23 @@ var GraphClient = (function () {
                 });
             }
         });
+
+        // Compute unassigned groups (groups with no Intune assignments)
+        var unassignedGroups = [];
+        if (allGroups && assignedGroupIdSet) {
+            allGroups.forEach(function (g) {
+                if (!assignedGroupIdSet.has(g.id)) {
+                    unassignedGroups.push({
+                        id: g.id,
+                        displayName: g.displayName || "Unnamed",
+                        description: g.description || "",
+                        groupType: (g.groupTypes && g.groupTypes.indexOf("DynamicMembership") !== -1) ? "Dynamic" : "Assigned"
+                    });
+                }
+            });
+        }
+        data.groups = unassignedGroups;
+
         return data;
     }
 
