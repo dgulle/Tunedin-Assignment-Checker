@@ -565,6 +565,10 @@
         activeGroupId = group.id;
         nestedData = null;
         orphanedData = null;
+        // Show/hide the Groups tab (only relevant in Orphaned Items view)
+        var groupsTab = categoryTabs.querySelector('[data-category="groups"]');
+        if (groupsTab) groupsTab.style.display = (group.id === "__orphaned__") ? "" : "none";
+
         if (group.id !== "__orphaned__") {
             activePlatformFilter = null;
             platformFilter.style.display = "none";
@@ -579,7 +583,7 @@
             if (group._synthetic && group.id === "__orphaned__") {
                 // Orphaned items view
                 if (appMode === "spa") {
-                    orphanedData = await GraphClient.getOrphanedItems();
+                    orphanedData = await GraphClient.getOrphanedItems(allGroups, assignedGroupIds);
                 } else {
                     orphanedData = await apiFetch("/api/orphaned-items");
                 }
@@ -659,7 +663,8 @@
         { key: "settingsCatalog", countId: "countSettingsCatalog" },
         { key: "applications",    countId: "countApplications"    },
         { key: "scripts",         countId: "countScripts"         },
-        { key: "remediations",    countId: "countRemediations"    }
+        { key: "remediations",    countId: "countRemediations"    },
+        { key: "groups",           countId: "countGroups"          }
     ];
 
     function getFilteredItems(key) {
@@ -737,6 +742,8 @@
                 return INTUNE_BASE + "#view/Microsoft_Intune_DeviceSettings/ConfigureWMPolicyMenuBlade/policyId/" + encodedId + "/policyType~/0";
             case "remediations":
                 return INTUNE_BASE + "#view/Microsoft_Intune_Enrollment/UNTRemediations";
+            case "groups":
+                return "https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/" + encodedId;
         }
         return null;
     }
@@ -839,6 +846,7 @@
 
     function getFilteredOrphanedItems(key) {
         var items = orphanedData[key] || [];
+        if (key === "groups") return items; // groups don't have platforms
         if (!activePlatformFilter) return items;
         return items.filter(function (item) {
             return item.platform === activePlatformFilter;
@@ -917,7 +925,9 @@
                 '</div>' +
                 (item.description ? '<div class="card-desc">' + escapeHtml(item.description) + '</div>' : '') +
                 '<div class="card-meta">' +
-                    (item.platform ? '<span class="badge badge-platform">' + escapeHtml(item.platform) + '</span>' : '') +
+                    (activeCategory === "groups" && item.groupType
+                        ? '<span class="badge badge-platform">' + escapeHtml(item.groupType) + '</span>'
+                        : (item.platform ? '<span class="badge badge-platform">' + escapeHtml(item.platform) + '</span>' : '')) +
                     '<span class="badge badge-orphaned">No Assignments</span>' +
                 '</div>';
 
@@ -932,7 +942,7 @@
     function exportOrphanedCsv() {
         if (!orphanedData) return;
 
-        var rows = [["Category", "Name", "Description", "Platform"]];
+        var rows = [["Category", "Name", "Description", "Platform / Group Type"]];
 
         CATEGORIES.forEach(function (c) {
             var items = getFilteredOrphanedItems(c.key);
@@ -942,7 +952,7 @@
                     label,
                     item.displayName || "",
                     item.description || "",
-                    item.platform || ""
+                    c.key === "groups" ? (item.groupType || "") : (item.platform || "")
                 ]);
             });
         });
