@@ -959,7 +959,7 @@
 
         var csv = rows.map(function (row) {
             return row.map(function (cell) {
-                var s = String(cell);
+                var s = String(cell).trim();
                 if (/^[=+\-@\t\r]/.test(s)) { s = "'" + s; }
                 s = s.replace(/"/g, '""');
                 return '"' + s + '"';
@@ -1067,7 +1067,7 @@
 
         var csv = rows.map(function (row) {
             return row.map(function (cell) {
-                var s = String(cell);
+                var s = String(cell).trim();
                 // Prevent CSV formula injection in Excel
                 if (/^[=+\-@\t\r]/.test(s)) {
                     s = "'" + s;
