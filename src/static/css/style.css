@@ -1190,6 +1190,30 @@ html, body {
     flex-shrink: 0;
 }
 
+/* Category info banner (non-error notices, e.g. orphaned groups scope) */
+.category-info-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    background: #FEF3C7;
+    color: #92400E;
+    border: 1px solid currentColor;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+[data-theme="dark"] .category-info-banner {
+    background: #422006;
+    color: #FCD34D;
+}
+
+.category-info-banner svg {
+    flex-shrink: 0;
+}
+
 /* Category empty */
 .category-empty {
     display: flex;
