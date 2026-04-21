@@ -6,11 +6,22 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; img-src 'self'; connect-src 'self' https://graph.microsoft.com https://login.microsoftonline.com; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
     <title>Tunedin Assignment Checker — ZeroToTrust</title>
     <link rel="stylesheet" href="src/static/css/style.css">
-    <!-- MSAL.js: Review for security updates quarterly. Latest 2.x is 2.39.0; consider migrating to 3.x+.
-         To update: download the new .min.js, generate SRI hash with:
-         shasum -b -a 384 msal-browser.min.js | awk '{print $1}' | xxd -r -p | base64
-         Then update the version, integrity hash, and test sign-in flow. -->
-    <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js" integrity="sha384-OJTwghM0Gh3Zc+gmd6l0lz1pFw9KuHHq0mSEZgmQEKgMnuSWWDb3bU9KzuD7w2hU" crossorigin="anonymous"></script>
+    <!-- MSAL.js: keep pinned to a current supported major. To update:
+         curl the new .min.js and generate the SRI hash with:
+           openssl dgst -sha384 -binary msal-browser.min.js | openssl base64 -A
+         Prefix the output with "sha384-" and test redirect + silent token flows
+         (sign-in, sign-out, token refresh after expiry) before committing. -->
+    <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@4.30.0/lib/msal-browser.min.js" integrity="sha384-RGxxfG5yRS8DLU7ZJ8OoLhbV/BsJFHyPuMVHrTLbpj3t5Z15LnviJmaznKY/a7LZ" crossorigin="anonymous"></script>
+    <!-- Framebuster: <meta> CSP does not enforce frame-ancestors (browsers only
+         honor it as an HTTP response header). For GitHub Pages we cannot set
+         response headers, so break out of any frame as a defence-in-depth step.
+         The PowerShell backend additionally sends X-Frame-Options: DENY. -->
+    <script>
+        if (window.top !== window.self) {
+            try { window.top.location = window.self.location; }
+            catch (e) { document.documentElement.innerHTML = ""; }
+        }
+    </script>
 </head>
 <body>
     <!-- Setup Screen (SPA mode only) -->
@@ -46,7 +57,7 @@
                     <li>Go to <strong>Entra Portal</strong> (<a href="https://entra.microsoft.com" target="_blank" rel="noopener noreferrer">entra.microsoft.com</a>) &gt; <strong>App registrations</strong></li>
                     <li>Click <strong>New registration</strong></li>
                     <li>Name it (e.g. "Tunedin Assignment Checker")</li>
-                    <li>Set <strong>Redirect URI</strong> to <code>Single-page application (SPA)</code> with value:<br><code id="setupRedirectHint">http://tunedin.zerototrust.tech/</code></li>
+                    <li>Set <strong>Redirect URI</strong> to <code>Single-page application (SPA)</code> with value:<br><code id="setupRedirectHint">https://tunedin.zerototrust.tech/</code></li>
                     <li>Under <strong>API permissions</strong>, add Microsoft Graph <em>delegated</em> permissions:
                         <ul>
                             <li>DeviceManagementConfiguration.Read.All</li>

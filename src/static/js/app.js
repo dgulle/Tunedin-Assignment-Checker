@@ -69,6 +69,35 @@
     // Mode: "backend" or "spa"
     var appMode = "backend";
 
+    // Synthetic groups for All Devices / All Users / Orphaned. Defined here
+    // (not later in the file) so renderGroupList can never read it before
+    // its initializer has run — an earlier definition lower in the IIFE
+    // manifested as "Cannot read properties of undefined (reading 'filter')"
+    // when renderGroupList fired from an async path.
+    var SYNTHETIC_GROUPS = [
+        { id: "__allDevices__", displayName: "All Devices", description: "Policies and apps assigned to all devices", _synthetic: true },
+        { id: "__allUsers__",   displayName: "All Users",   description: "Policies and apps assigned to all licensed users", _synthetic: true },
+        { id: "__orphaned__",   displayName: "Orphaned Items", description: "Items with no assignments — review for deletion", _synthetic: true }
+    ];
+
+    // Per-launch backend API secret. The PowerShell script opens the
+    // browser at http://localhost:PORT/#k=<secret>. We read the fragment
+    // once at startup, scrub it from the address bar, and attach it as
+    // X-Backend-Key on every /api/* request. Without this key the local
+    // HTTP listener returns 401 for all API routes — so other processes
+    // running as the same user cannot piggyback on the Graph session.
+    var _backendKey = null;
+    (function extractBackendKey() {
+        try {
+            var m = /^#k=([A-Za-z0-9_\-]+)/.exec(window.location.hash || "");
+            if (m) {
+                _backendKey = m[1];
+                window.history.replaceState(null, "",
+                    window.location.pathname + window.location.search);
+            }
+        } catch (e) { /* ignore */ }
+    })();
+
     // ── SPA session inactivity timeout ──────────────────────────────────
     var SPA_IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
     var _idleTimer = null;
@@ -197,17 +226,24 @@
     // ── Mode Detection ──────────────────────────────────────────────────
 
     async function detectMode() {
-        // Try to reach the PowerShell backend via the /api/status endpoint
-        try {
-            var resp = await fetch("/api/status");
-            if (resp.ok) {
-                appMode = "backend";
-                showApp();
-                loadGroups();
-                return;
+        // Try to reach the PowerShell backend via the /api/status endpoint.
+        // If no backend key is present in the URL fragment, skip the probe
+        // entirely — the backend will reject us anyway, and the request
+        // might come from a misrouted SPA-mode load.
+        if (_backendKey) {
+            try {
+                var resp = await fetch("/api/status", {
+                    headers: { "X-Backend-Key": _backendKey }
+                });
+                if (resp.ok) {
+                    appMode = "backend";
+                    showApp();
+                    loadGroups();
+                    return;
+                }
+            } catch (e) {
+                // Backend not available — fall through to SPA mode
             }
-        } catch (e) {
-            // Backend not available — fall through to SPA mode
         }
 
         // SPA mode
@@ -354,12 +390,27 @@
     // ── API helpers ─────────────────────────────────────────────────────
 
     async function apiFetch(url) {
-        var resp = await fetch(url);
+        var headers = {};
+        if (_backendKey) headers["X-Backend-Key"] = _backendKey;
+        var resp = await fetch(url, { headers: headers });
         if (!resp.ok) {
             var body = await resp.json().catch(function () { return {}; });
+            if (resp.status === 401 && body && body.expired) {
+                onBackendSessionExpired();
+            }
             throw new Error(body.error || "HTTP " + resp.status);
         }
         return resp.json();
+    }
+
+    var _backendSessionExpiredShown = false;
+    function onBackendSessionExpired() {
+        if (_backendSessionExpiredShown) return;
+        _backendSessionExpiredShown = true;
+        stopIdleTimer();
+        setConnection("error", "Session expired");
+        alert("Your backend session expired due to inactivity. " +
+              "Please close this tab and restart the script to sign in again.");
     }
 
     // ── Load groups ─────────────────────────────────────────────────────
@@ -391,6 +442,10 @@
                 groupAssignCounts = backendIdData.counts || {};
             }
 
+            if (!Array.isArray(groups)) {
+                console.error("Unexpected /api/groups response (not an array):", groups);
+                throw new Error("Server returned an unexpected groups response. Check the PowerShell console for errors.");
+            }
             allGroups = groups;
             assignedGroupIds = new Set(Array.isArray(assignedIds) ? assignedIds : Object.keys(groupAssignCounts));
             renderGroupList();
@@ -404,14 +459,6 @@
             sidebarLoading.style.display = "none";
         }
     }
-
-    // ── Synthetic groups for All Devices / All Users ───────────────────
-
-    var SYNTHETIC_GROUPS = [
-        { id: "__allDevices__", displayName: "All Devices", description: "Policies and apps assigned to all devices", _synthetic: true },
-        { id: "__allUsers__",   displayName: "All Users",   description: "Policies and apps assigned to all licensed users", _synthetic: true },
-        { id: "__orphaned__",   displayName: "Orphaned Items", description: "Items with no assignments — review for deletion", _synthetic: true }
-    ];
 
     // ── Render group list (with search filter) ──────────────────────────
 
@@ -1127,7 +1174,9 @@
             }
 
             try {
-                var resp = await fetch("/api/logout", { method: "POST" });
+                var logoutHeaders = {};
+                if (_backendKey) logoutHeaders["X-Backend-Key"] = _backendKey;
+                var resp = await fetch("/api/logout", { method: "POST", headers: logoutHeaders });
                 var data = await resp.json().catch(function () { return {}; });
 
                 allGroups         = [];

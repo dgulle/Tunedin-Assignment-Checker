@@ -122,6 +122,25 @@ catch {
 }
 
 # -----------------------------------------------------------------------------
+# 3a. Per-launch session state: API secret and idle-timeout tracking
+# -----------------------------------------------------------------------------
+
+# High-entropy random secret bound to this launch. Only the browser window
+# opened by this script ever sees it (delivered via URL fragment). Any
+# other local process that hits the listener without this key is rejected
+# from /api/* routes so it cannot piggyback on the Graph session.
+$script:apiSecretBytes = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($script:apiSecretBytes)
+$script:apiSecret = ([Convert]::ToBase64String($script:apiSecretBytes)).TrimEnd('=').Replace('+','-').Replace('/','_')
+
+# Idle timeout: disconnect Graph after this many seconds of inactivity.
+# Matches the SPA-side timer (30 min) so an abandoned terminal does not
+# leave delegated Graph access available indefinitely.
+$script:idleTimeoutSec   = 30 * 60
+$script:lastActivityTime = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+$script:sessionExpired   = $false
+
+# -----------------------------------------------------------------------------
 # 4. Graph API helper functions
 # -----------------------------------------------------------------------------
 
@@ -693,7 +712,7 @@ function Set-SecurityHeaders {
     # CORS: restrict cross-origin requests to same localhost origin
     $Response.Headers.Set("Access-Control-Allow-Origin", "http://localhost:$Port")
     $Response.Headers.Set("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS")
-    $Response.Headers.Set("Access-Control-Allow-Headers", "Content-Type")
+    $Response.Headers.Set("Access-Control-Allow-Headers", "Content-Type, X-Backend-Key")
 }
 
 function Test-ApiOrigin {
@@ -766,12 +785,17 @@ Write-Host "  for localhost-only access, but traffic could be observed by" -Fore
 Write-Host "  other processes on this machine with elevated privileges." -ForegroundColor Yellow
 Write-Host ""
 
-# Open default browser
+# Open default browser. The API secret is passed as a URL fragment so it is
+# never sent on the wire (fragments stay client-side) and so other local
+# processes that simply GET / cannot learn it. The SPA reads the fragment,
+# scrubs it from the address bar, and attaches it as X-Backend-Key on every
+# /api/* call.
+$launchUrl = "http://localhost:$Port/#k=$script:apiSecret"
 try {
-    Start-Process "http://localhost:$Port"
+    Start-Process $launchUrl
 }
 catch {
-    Write-Host "  Open http://localhost:$Port in your browser." -ForegroundColor Yellow
+    Write-Host "  Open $launchUrl in your browser." -ForegroundColor Yellow
 }
 
 # -----------------------------------------------------------------------------
@@ -833,6 +857,61 @@ try {
                 $resp.OutputStream.Write($buffer, 0, $buffer.Length)
                 $resp.OutputStream.Close()
                 continue
+            }
+
+            # -- API secret validation (per-launch token) --------------
+            # Reject any /api/* request that does not present the launch
+            # secret. This blocks other local processes from piggybacking
+            # on the signed-in Graph session even if they forge Origin.
+            if ($path.StartsWith("/api/")) {
+                $providedKey = $req.Headers["X-Backend-Key"]
+                $expected    = $script:apiSecret
+                $isValid     = $false
+                if ($providedKey -and $expected -and $providedKey.Length -eq $expected.Length) {
+                    # Constant-time compare to avoid timing side channels.
+                    $diff = 0
+                    for ($i = 0; $i -lt $expected.Length; $i++) {
+                        $diff = $diff -bor ([int][char]$providedKey[$i] -bxor [int][char]$expected[$i])
+                    }
+                    $isValid = ($diff -eq 0)
+                }
+                if (-not $isValid) {
+                    $resp.StatusCode = 401
+                    $body   = '{"error":"Unauthorized: missing or invalid backend key."}'
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                    $resp.OutputStream.Close()
+                    continue
+                }
+            }
+
+            # -- Idle timeout enforcement ------------------------------
+            # After $script:idleTimeoutSec of inactivity, disconnect
+            # Graph and reject further /api/* calls until the script is
+            # restarted. This prevents an abandoned terminal from leaving
+            # delegated Graph access open indefinitely.
+            if ($path.StartsWith("/api/")) {
+                $nowSec = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+                if (-not $script:sessionExpired -and
+                    ($nowSec - $script:lastActivityTime) -gt $script:idleTimeoutSec) {
+                    try { Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null } catch { }
+                    $script:sessionExpired = $true
+                    Write-Host "  Session expired due to inactivity. Graph disconnected." -ForegroundColor Yellow
+                }
+                if ($script:sessionExpired) {
+                    $resp.StatusCode = 401
+                    $body   = '{"error":"Session expired due to inactivity. Please restart the script to sign in again.","expired":true}'
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                    $resp.OutputStream.Close()
+                    continue
+                }
+                # Authenticated, non-expired API call — record activity.
+                $script:lastActivityTime = $nowSec
             }
 
             # -- API: status (backend mode detection) ------------------
@@ -1091,6 +1170,7 @@ try {
                 # Origin validation is handled globally above for all /api/* routes
                 try {
                     Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+                    $script:sessionExpired = $true
                     Write-Host "  User logged out via web UI." -ForegroundColor Yellow
                     $body   = '{"success":true,"message":"Disconnected from Microsoft Graph. Restart the script to sign in again."}'
                     $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
@@ -1127,11 +1207,18 @@ try {
                 $relativePath = $path.Substring("/static/".Length).Replace("/", [System.IO.Path]::DirectorySeparatorChar)
                 $filePath     = Join-Path $staticRoot $relativePath
 
-                # Prevent directory traversal
+                # Prevent directory traversal. A raw StartsWith() on the
+                # resolved path can match sibling directories that share a
+                # prefix (e.g. C:\app\static-evil starts with C:\app\static)
+                # and ignores Windows case-insensitivity. Canonicalize and
+                # compare with a trailing separator using ordinal-ignore-case.
+                $dirSep       = [System.IO.Path]::DirectorySeparatorChar
                 $resolvedPath = [System.IO.Path]::GetFullPath($filePath)
-                $resolvedRoot = [System.IO.Path]::GetFullPath($staticRoot)
+                $resolvedRoot = [System.IO.Path]::GetFullPath($staticRoot).TrimEnd($dirSep) + $dirSep
 
-                if ($resolvedPath.StartsWith($resolvedRoot) -and (Test-Path $resolvedPath -PathType Leaf)) {
+                $withinRoot = $resolvedPath.StartsWith($resolvedRoot, [System.StringComparison]::OrdinalIgnoreCase)
+
+                if ($withinRoot -and (Test-Path $resolvedPath -PathType Leaf)) {
                     $ext  = [System.IO.Path]::GetExtension($resolvedPath).ToLower()
                     $mime = if ($mimeTypes.ContainsKey($ext)) { $mimeTypes[$ext] } else { "application/octet-stream" }
                     $bytes = [System.IO.File]::ReadAllBytes($resolvedPath)
