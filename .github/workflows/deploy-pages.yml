@@ -1,0 +1,53 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # All actions are pinned to full commit SHAs to defend against tag-hijack
+      # supply-chain attacks that could inject token-stealing code into the SPA.
+      # When bumping a pin, verify the SHA against the published release.
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # Stage only the files the SPA actually needs on Pages. Avoids shipping
+      # CLAUDE.md, README internals, .github, or anything added later by
+      # accident. Paths mirror the references in the root index.html.
+      - name: Stage site
+        run: |
+          set -euo pipefail
+          mkdir -p _site/src/static
+          cp index.html _site/
+          cp -r src/static/css _site/src/static/css
+          cp -r src/static/js  _site/src/static/js
+          if [ -d src/static/img ]; then
+            cp -r src/static/img _site/src/static/img
+          fi
+          echo "tunedin.zerototrust.tech" > _site/CNAME
+          touch _site/.nojekyll
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: "_site"
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

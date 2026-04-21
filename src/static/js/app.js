@@ -29,6 +29,7 @@
     var categoryTabs      = document.getElementById("categoryTabs");
     var cardGrid          = document.getElementById("cardGrid");
     var categoryEmpty     = document.getElementById("categoryEmpty");
+    var platformFilter    = document.getElementById("platformFilter");
 
     var connectionBadge = document.getElementById("connectionBadge");
     var badgeDot        = connectionBadge.querySelector(".badge-dot");
@@ -38,6 +39,8 @@
     var scriptModalTitle = document.getElementById("scriptModalTitle");
     var scriptModalFile  = document.getElementById("scriptModalFile");
     var scriptModalBody  = document.getElementById("scriptModalBody");
+    var btnCopyScript    = document.getElementById("btnCopyScript");
+    var copyBtnLabel     = document.getElementById("copyBtnLabel");
 
     var btnGroupFilter = document.getElementById("btnGroupFilter");
 
@@ -57,10 +60,74 @@
     var showAllUsers       = true; // toggle for All Users assignments
     var activeGroupId      = null;
     var assignmentData     = null;
+    var nestedData         = null;  // nested/inherited assignments via parent groups
+    var orphanedData       = null;  // orphaned items (no assignments)
+    var showNested         = true;  // toggle for nested group assignments
     var activeCategory     = "configurations";
+    var activePlatformFilter = null; // null = All, or "Android"/"iOS"/"Windows"/"macOS"
 
     // Mode: "backend" or "spa"
     var appMode = "backend";
+
+    // Synthetic groups for All Devices / All Users / Orphaned. Defined here
+    // (not later in the file) so renderGroupList can never read it before
+    // its initializer has run — an earlier definition lower in the IIFE
+    // manifested as "Cannot read properties of undefined (reading 'filter')"
+    // when renderGroupList fired from an async path.
+    var SYNTHETIC_GROUPS = [
+        { id: "__allDevices__", displayName: "All Devices", description: "Policies and apps assigned to all devices", _synthetic: true },
+        { id: "__allUsers__",   displayName: "All Users",   description: "Policies and apps assigned to all licensed users", _synthetic: true },
+        { id: "__orphaned__",   displayName: "Orphaned Items", description: "Items with no assignments — review for deletion", _synthetic: true }
+    ];
+
+    // Per-launch backend API secret. The PowerShell script opens the
+    // browser at http://localhost:PORT/#k=<secret>. We read the fragment
+    // once at startup, scrub it from the address bar, and attach it as
+    // X-Backend-Key on every /api/* request. Without this key the local
+    // HTTP listener returns 401 for all API routes — so other processes
+    // running as the same user cannot piggyback on the Graph session.
+    var _backendKey = null;
+    (function extractBackendKey() {
+        try {
+            var m = /^#k=([A-Za-z0-9_\-]+)/.exec(window.location.hash || "");
+            if (m) {
+                _backendKey = m[1];
+                window.history.replaceState(null, "",
+                    window.location.pathname + window.location.search);
+            }
+        } catch (e) { /* ignore */ }
+    })();
+
+    // ── SPA session inactivity timeout ──────────────────────────────────
+    var SPA_IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+    var _idleTimer = null;
+
+    function resetIdleTimer() {
+        if (appMode !== "spa" || !_idleTimer) return;
+        clearTimeout(_idleTimer);
+        _idleTimer = setTimeout(onIdleTimeout, SPA_IDLE_TIMEOUT_MS);
+    }
+
+    function startIdleTimer() {
+        if (appMode !== "spa") return;
+        _idleTimer = setTimeout(onIdleTimeout, SPA_IDLE_TIMEOUT_MS);
+        ["mousemove", "keydown", "click", "scroll", "touchstart"].forEach(function (evt) {
+            document.addEventListener(evt, resetIdleTimer, { passive: true });
+        });
+    }
+
+    function stopIdleTimer() {
+        if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
+        ["mousemove", "keydown", "click", "scroll", "touchstart"].forEach(function (evt) {
+            document.removeEventListener(evt, resetIdleTimer);
+        });
+    }
+
+    function onIdleTimeout() {
+        stopIdleTimer();
+        alert("Your session has expired due to inactivity. Please sign in again.");
+        logout();
+    }
 
     // ── Boot ────────────────────────────────────────────────────────────
     // Hide main app immediately to prevent flash while detectMode runs
@@ -75,6 +142,7 @@
     document.getElementById("btnLogout").addEventListener("click", logout);
     document.getElementById("btnTheme").addEventListener("click", toggleTheme);
     document.getElementById("btnModalClose").addEventListener("click", closeScriptModal);
+    if (btnCopyScript) btnCopyScript.addEventListener("click", copyScriptContent);
     btnGroupFilter.addEventListener("click", toggleGroupFilter);
 
     // Count filter controls
@@ -114,6 +182,13 @@
         renderCards();
     });
 
+    document.getElementById("btnShowNested").addEventListener("click", function () {
+        showNested = !showNested;
+        this.classList.toggle("active", showNested);
+        updateCounts();
+        renderCards();
+    });
+
     // Export CSV
     document.getElementById("btnExportCsv").addEventListener("click", exportCsv);
 
@@ -126,7 +201,23 @@
         if (!tab) return;
         activeCategory = tab.dataset.category;
         highlightTab();
-        renderCards();
+        if (activeGroupId === "__orphaned__") {
+            updateOrphanedCounts();
+            renderOrphanedCards();
+        } else {
+            renderCards();
+        }
+    });
+
+    platformFilter.addEventListener("click", function (e) {
+        var btn = e.target.closest(".platform-btn");
+        if (!btn) return;
+        activePlatformFilter = btn.dataset.platform || null;
+        platformFilter.querySelectorAll(".platform-btn").forEach(function (b) {
+            b.classList.toggle("active", b === btn);
+        });
+        updateOrphanedCounts();
+        renderOrphanedCards();
     });
 
     // Setup screen connect button
@@ -135,21 +226,37 @@
     // ── Mode Detection ──────────────────────────────────────────────────
 
     async function detectMode() {
-        // Try to reach the PowerShell backend
-        try {
-            var resp = await fetch("/api/groups", { method: "HEAD" });
-            if (resp.ok || resp.status === 200) {
-                appMode = "backend";
-                showApp();
-                loadGroups();
-                return;
+        // Try to reach the PowerShell backend via the /api/status endpoint.
+        // If no backend key is present in the URL fragment, skip the probe
+        // entirely — the backend will reject us anyway, and the request
+        // might come from a misrouted SPA-mode load.
+        if (_backendKey) {
+            try {
+                var resp = await fetch("/api/status", {
+                    headers: { "X-Backend-Key": _backendKey }
+                });
+                if (resp.ok) {
+                    appMode = "backend";
+                    showApp();
+                    loadGroups();
+                    return;
+                }
+            } catch (e) {
+                // Backend not available — fall through to SPA mode
             }
-        } catch (e) {
-            // Backend not available
         }
 
         // SPA mode
         appMode = "spa";
+
+        // Security: warn if SPA mode is running over HTTP (excluding localhost)
+        if (window.location.protocol === "http:" &&
+            window.location.hostname !== "localhost" &&
+            window.location.hostname !== "127.0.0.1") {
+            console.warn("Security warning: running over HTTP. OAuth tokens may be intercepted. Use HTTPS.");
+            alert("Security warning: this page is served over HTTP. Your authentication tokens could be intercepted by an attacker. Please use HTTPS.");
+        }
+
         var savedClientId = localStorage.getItem("iac_clientId");
         var savedTenantId = localStorage.getItem("iac_tenantId");
 
@@ -160,6 +267,7 @@
                 if (account) {
                     showApp();
                     setConnection("connected", account.username || "Connected");
+                    startIdleTimer();
                     loadGroups();
                     return;
                 }
@@ -207,6 +315,12 @@
 
         if (!tenantId || !clientId) {
             alert("Please enter both Tenant ID and Client ID.");
+            return;
+        }
+
+        // Length limits to prevent abuse
+        if (tenantId.length > 253 || clientId.length > 36) {
+            alert("Tenant ID must be at most 253 characters and Client ID must be at most 36 characters.");
             return;
         }
 
@@ -276,12 +390,27 @@
     // ── API helpers ─────────────────────────────────────────────────────
 
     async function apiFetch(url) {
-        var resp = await fetch(url);
+        var headers = {};
+        if (_backendKey) headers["X-Backend-Key"] = _backendKey;
+        var resp = await fetch(url, { headers: headers });
         if (!resp.ok) {
             var body = await resp.json().catch(function () { return {}; });
+            if (resp.status === 401 && body && body.expired) {
+                onBackendSessionExpired();
+            }
             throw new Error(body.error || "HTTP " + resp.status);
         }
         return resp.json();
+    }
+
+    var _backendSessionExpiredShown = false;
+    function onBackendSessionExpired() {
+        if (_backendSessionExpiredShown) return;
+        _backendSessionExpiredShown = true;
+        stopIdleTimer();
+        setConnection("error", "Session expired");
+        alert("Your backend session expired due to inactivity. " +
+              "Please close this tab and restart the script to sign in again.");
     }
 
     // ── Load groups ─────────────────────────────────────────────────────
@@ -313,6 +442,10 @@
                 groupAssignCounts = backendIdData.counts || {};
             }
 
+            if (!Array.isArray(groups)) {
+                console.error("Unexpected /api/groups response (not an array):", groups);
+                throw new Error("Server returned an unexpected groups response. Check the PowerShell console for errors.");
+            }
             allGroups = groups;
             assignedGroupIds = new Set(Array.isArray(assignedIds) ? assignedIds : Object.keys(groupAssignCounts));
             renderGroupList();
@@ -326,13 +459,6 @@
             sidebarLoading.style.display = "none";
         }
     }
-
-    // ── Synthetic groups for All Devices / All Users ───────────────────
-
-    var SYNTHETIC_GROUPS = [
-        { id: "__allDevices__", displayName: "All Devices", description: "Policies and apps assigned to all devices", _synthetic: true },
-        { id: "__allUsers__",   displayName: "All Users",   description: "Policies and apps assigned to all licensed users", _synthetic: true }
-    ];
 
     // ── Render group list (with search filter) ──────────────────────────
 
@@ -388,32 +514,35 @@
             groupList.appendChild(li);
         });
 
-        // Separator before synthetic groups at the bottom
-        var syntheticFiltered = SYNTHETIC_GROUPS.filter(function (g) {
-            return !query || (g.displayName || "").toLowerCase().indexOf(query) !== -1;
-        });
-        if (syntheticFiltered.length > 0 && filtered.length > 0) {
-            var sep = document.createElement("li");
-            sep.className = "group-list-separator";
-            groupList.appendChild(sep);
+        // Render synthetic groups in the sticky bottom section
+        var stickyList = document.getElementById("groupListSticky");
+        if (stickyList) {
+            stickyList.innerHTML = "";
+            var syntheticFiltered = SYNTHETIC_GROUPS.filter(function (g) {
+                return !query || (g.displayName || "").toLowerCase().indexOf(query) !== -1;
+            });
+
+            syntheticFiltered.forEach(function (g) {
+                var li = document.createElement("li");
+                li.className = "group-item group-item-synthetic" + (g.id === activeGroupId ? " active" : "");
+                li.dataset.id = g.id;
+
+                var icon;
+                if (g.id === "__allDevices__") {
+                    icon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+                } else if (g.id === "__orphaned__") {
+                    icon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+                } else {
+                    icon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+                }
+
+                li.innerHTML =
+                    '<div class="group-item-name">' + icon + ' ' + escapeHtml(g.displayName) + '</div>';
+
+                li.addEventListener("click", function () { selectGroup(g); });
+                stickyList.appendChild(li);
+            });
         }
-
-        syntheticFiltered.forEach(function (g) {
-            var li = document.createElement("li");
-            li.className = "group-item group-item-synthetic" + (g.id === activeGroupId ? " active" : "");
-            li.dataset.id = g.id;
-
-            var icon = g.id === "__allDevices__"
-                ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>'
-                : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
-
-            li.innerHTML =
-                '<div class="group-item-name">' + icon + ' ' + escapeHtml(g.displayName) + '</div>' +
-                '<div class="group-item-desc">' + escapeHtml(g.description) + '</div>';
-
-            li.addEventListener("click", function () { selectGroup(g); });
-            groupList.appendChild(li);
-        });
 
         groupCount.textContent = filtered.length;
     }
@@ -481,11 +610,40 @@
 
     async function selectGroup(group) {
         activeGroupId = group.id;
+        nestedData = null;
+        orphanedData = null;
+        // Show/hide the Groups tab (only relevant in Orphaned Items view)
+        var groupsTab = categoryTabs.querySelector('[data-category="groups"]');
+        if (groupsTab) groupsTab.style.display = (group.id === "__orphaned__") ? "" : "none";
+
+        if (group.id !== "__orphaned__") {
+            activePlatformFilter = null;
+            platformFilter.style.display = "none";
+            platformFilter.querySelectorAll(".platform-btn").forEach(function (b) {
+                b.classList.toggle("active", !b.dataset.platform);
+            });
+        }
         renderGroupList();
         showPanel("loading");
 
         try {
-            if (group._synthetic) {
+            if (group._synthetic && group.id === "__orphaned__") {
+                // Orphaned items view
+                if (appMode === "spa") {
+                    orphanedData = await GraphClient.getOrphanedItems(allGroups, assignedGroupIds);
+                } else {
+                    orphanedData = await apiFetch("/api/orphaned-items");
+                }
+                assignmentData = null;
+                populateGroupHeader(group);
+                updateOrphanedCounts();
+                activeCategory = getFirstNonEmptyOrphanedCategory() || "configurations";
+                highlightTab();
+                platformFilter.style.display = "flex";
+                renderOrphanedCards();
+                showPanel("assignments");
+                return;
+            } else if (group._synthetic) {
                 // Synthetic group: fetch by target type
                 var targetType = group.id === "__allDevices__"
                     ? "#microsoft.graph.allDevicesAssignmentTarget"
@@ -498,9 +656,19 @@
                     assignmentData = await apiFetch("/api/assignments-by-target?type=" + encodeURIComponent(targetType));
                 }
             } else if (appMode === "spa") {
-                assignmentData = await GraphClient.getAssignmentsForGroup(group.id);
+                var groupResults = await Promise.all([
+                    GraphClient.getAssignmentsForGroup(group.id),
+                    GraphClient.getNestedAssignments(group.id).catch(function () { return null; })
+                ]);
+                assignmentData = groupResults[0];
+                nestedData = groupResults[1];
             } else {
-                assignmentData = await apiFetch("/api/groups/" + group.id + "/assignments");
+                var backendGroupResults = await Promise.all([
+                    apiFetch("/api/groups/" + group.id + "/assignments"),
+                    apiFetch("/api/groups/" + group.id + "/nested-assignments").catch(function () { return null; })
+                ]);
+                assignmentData = backendGroupResults[0];
+                nestedData = backendGroupResults[1];
             }
 
             populateGroupHeader(group);
@@ -542,16 +710,35 @@
         { key: "settingsCatalog", countId: "countSettingsCatalog" },
         { key: "applications",    countId: "countApplications"    },
         { key: "scripts",         countId: "countScripts"         },
-        { key: "remediations",    countId: "countRemediations"    }
+        { key: "remediations",    countId: "countRemediations"    },
+        { key: "groups",           countId: "countGroups"          }
     ];
 
     function getFilteredItems(key) {
         var items = assignmentData[key] || [];
-        return items.filter(function (item) {
+        var filtered = items.filter(function (item) {
             if (!showAllDevices && item.assignmentType === "All Devices") return false;
             if (!showAllUsers && item.assignmentType === "All Users") return false;
             return true;
         });
+
+        // Merge nested/inherited assignments if available and enabled
+        if (showNested && nestedData && nestedData[key]) {
+            var nestedItems = nestedData[key] || [];
+            // Avoid duplicates: only add nested items not already in the direct list
+            var directIds = {};
+            filtered.forEach(function (item) {
+                directIds[item.id + "|" + (item.assignmentType || "")] = true;
+            });
+            nestedItems.forEach(function (item) {
+                var dedupKey = item.id + "|" + (item.assignmentType || "");
+                if (!directIds[dedupKey]) {
+                    filtered.push(item);
+                }
+            });
+        }
+
+        return filtered;
     }
 
     function updateCounts() {
@@ -590,17 +777,20 @@
     var INTUNE_BASE = "https://intune.microsoft.com/";
 
     function getIntuneUrl(category, itemId) {
+        var encodedId = itemId ? encodeURIComponent(itemId) : "";
         switch (category) {
             case "configurations":
                 return INTUNE_BASE + "#view/Microsoft_Intune_DeviceSettings/DevicesMenu/~/configuration";
             case "settingsCatalog":
                 return INTUNE_BASE + "#view/Microsoft_Intune_DeviceSettings/DevicesMenu/~/configuration";
             case "applications":
-                return INTUNE_BASE + "#view/Microsoft_Intune_Apps/SettingsMenu/appId/" + itemId;
+                return INTUNE_BASE + "#view/Microsoft_Intune_Apps/SettingsMenu/appId/" + encodedId;
             case "scripts":
-                return INTUNE_BASE + "#view/Microsoft_Intune_DeviceSettings/ConfigureWMPolicyMenuBlade/policyId/" + itemId + "/policyType~/0";
+                return INTUNE_BASE + "#view/Microsoft_Intune_DeviceSettings/ConfigureWMPolicyMenuBlade/policyId/" + encodedId + "/policyType~/0";
             case "remediations":
                 return INTUNE_BASE + "#view/Microsoft_Intune_Enrollment/UNTRemediations";
+            case "groups":
+                return "https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/" + encodedId;
         }
         return null;
     }
@@ -654,6 +844,12 @@
             if (item.filterType && item.filterType !== "none") {
                 badges.push('<span class="badge badge-filter">Filter: ' + escapeHtml(item.filterType) + '</span>');
             }
+            if (item.inheritedFrom) {
+                badges.push('<span class="badge badge-inherited" title="Inherited via nested group membership">Inherited: ' + escapeHtml(item.inheritedFrom) + '</span>');
+            }
+            if (item.platform) {
+                badges.push('<span class="badge badge-platform">' + escapeHtml(item.platform) + '</span>');
+            }
 
             var url = getIntuneUrl(activeCategory, item.id);
             var linkIcon = '<svg class="link-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
@@ -693,12 +889,149 @@
         });
     }
 
+    // ── Orphaned items helpers ─────────────────────────────────────────
+
+    function getFilteredOrphanedItems(key) {
+        var items = orphanedData[key] || [];
+        if (key === "groups") return items; // groups don't have platforms
+        if (!activePlatformFilter) return items;
+        return items.filter(function (item) {
+            return item.platform === activePlatformFilter;
+        });
+    }
+
+    function updateOrphanedCounts() {
+        if (!orphanedData) return;
+        var errors = orphanedData._errors || {};
+        CATEGORIES.forEach(function (c) {
+            var el = document.getElementById(c.countId);
+            if (el) {
+                if (errors[c.key]) {
+                    el.textContent = "!";
+                    el.title = "Failed to load — click to retry";
+                } else {
+                    el.textContent = getFilteredOrphanedItems(c.key).length;
+                    el.title = "";
+                }
+            }
+        });
+    }
+
+    function getFirstNonEmptyOrphanedCategory() {
+        if (!orphanedData) return null;
+        for (var i = 0; i < CATEGORIES.length; i++) {
+            if ((orphanedData[CATEGORIES[i].key] || []).length > 0) return CATEGORIES[i].key;
+        }
+        return null;
+    }
+
+    function renderOrphanedCards() {
+        if (!orphanedData) return;
+
+        var errors = orphanedData._errors || {};
+        var categoryError = errors[activeCategory];
+        var items = getFilteredOrphanedItems(activeCategory);
+        cardGrid.innerHTML = "";
+
+        // Show error banner if this category failed
+        var existingBanner = document.getElementById("categoryErrorBanner");
+        if (existingBanner) existingBanner.remove();
+
+        if (categoryError) {
+            var banner = document.createElement("div");
+            banner.id = "categoryErrorBanner";
+            banner.className = "category-error-banner";
+            banner.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+                '<span>Failed to load this category.</span>';
+            cardGrid.parentNode.insertBefore(banner, cardGrid);
+        }
+
+        if (items.length === 0) {
+            cardGrid.style.display     = "none";
+            categoryEmpty.style.display = categoryError ? "none" : "flex";
+            return;
+        }
+
+        cardGrid.style.display      = "grid";
+        categoryEmpty.style.display = "none";
+
+        items.forEach(function (item) {
+            var card = document.createElement("div");
+            card.className = "assignment-card orphaned-card";
+
+            var url = getIntuneUrl(activeCategory, item.id);
+            var linkIcon = '<svg class="link-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+            var nameHtml = url
+                ? '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer" title="Open in Intune">' + escapeHtml(item.displayName || "Unnamed") + linkIcon + '</a>'
+                : escapeHtml(item.displayName || "Unnamed");
+
+            card.innerHTML =
+                '<div class="card-header">' +
+                    '<div class="card-name">' + nameHtml + '</div>' +
+                    '<div class="card-actions"></div>' +
+                '</div>' +
+                (item.description ? '<div class="card-desc">' + escapeHtml(item.description) + '</div>' : '') +
+                '<div class="card-meta">' +
+                    (activeCategory === "groups" && item.groupType
+                        ? '<span class="badge badge-platform">' + escapeHtml(item.groupType) + '</span>'
+                        : (item.platform ? '<span class="badge badge-platform">' + escapeHtml(item.platform) + '</span>' : '')) +
+                    '<span class="badge badge-orphaned">No Assignments</span>' +
+                '</div>';
+
+            var cardActions = card.querySelector(".card-actions");
+            var itemName = item.displayName || "Unnamed";
+            cardActions.appendChild(createCopyButton(function () { return itemName; }));
+
+            cardGrid.appendChild(card);
+        });
+    }
+
+    function exportOrphanedCsv() {
+        if (!orphanedData) return;
+
+        var rows = [["Category", "Name", "Description", "Platform / Group Type"]];
+
+        CATEGORIES.forEach(function (c) {
+            var items = getFilteredOrphanedItems(c.key);
+            var label = c.key.replace(/([A-Z])/g, " $1").replace(/^./, function (s) { return s.toUpperCase(); });
+            items.forEach(function (item) {
+                rows.push([
+                    label,
+                    item.displayName || "",
+                    item.description || "",
+                    c.key === "groups" ? (item.groupType || "") : (item.platform || "")
+                ]);
+            });
+        });
+
+        var csv = rows.map(function (row) {
+            return row.map(function (cell) {
+                var s = String(cell).trim();
+                if (/^[=+\-@\t\r]/.test(s)) { s = "'" + s; }
+                s = s.replace(/"/g, '""');
+                return '"' + s + '"';
+            }).join(",");
+        }).join("\r\n");
+
+        var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "orphaned_items.csv";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
     // ── Script preview modal ────────────────────────────────────────────
 
     async function openScriptModal(scriptId, scriptName) {
         scriptModalTitle.textContent = scriptName;
         scriptModalFile.textContent  = "";
         scriptModalBody.innerHTML    = '<div class="modal-loading"><div class="spinner"></div><p>Loading script content...</p></div>';
+        copyBtnLabel.textContent = "Copy Script";
+        btnCopyScript.classList.remove("copied");
         scriptModal.classList.add("active");
 
         try {
@@ -728,6 +1061,19 @@
         scriptModal.classList.remove("active");
     }
 
+    function copyScriptContent() {
+        var pre = scriptModalBody.querySelector("pre");
+        if (!pre) return;
+        navigator.clipboard.writeText(pre.textContent).then(function () {
+            copyBtnLabel.textContent = "Copied!";
+            btnCopyScript.classList.add("copied");
+            setTimeout(function () {
+                copyBtnLabel.textContent = "Copy Script";
+                btnCopyScript.classList.remove("copied");
+            }, 2000);
+        });
+    }
+
     // ── Connection badge ────────────────────────────────────────────────
 
     function setConnection(state, text) {
@@ -738,10 +1084,16 @@
     // ── Export CSV ─────────────────────────────────────────────────────
 
     function exportCsv() {
+        // Handle orphaned items export
+        if (activeGroupId === "__orphaned__") {
+            exportOrphanedCsv();
+            return;
+        }
+
         if (!assignmentData) return;
 
         var groupName = selectedGroupName.textContent || "Group";
-        var rows = [["Category", "Name", "Description", "Assignment Type", "Intent", "Filter Type"]];
+        var rows = [["Category", "Name", "Description", "Platform", "Assignment Type", "Intent", "Filter Type", "Inherited From"]];
 
         CATEGORIES.forEach(function (c) {
             var items = getFilteredItems(c.key);
@@ -751,16 +1103,23 @@
                     label,
                     item.displayName || "",
                     item.description || "",
+                    item.platform || "",
                     item.assignmentType || "",
                     item.intent || "",
-                    item.filterType && item.filterType !== "none" ? item.filterType : ""
+                    item.filterType && item.filterType !== "none" ? item.filterType : "",
+                    item.inheritedFrom || ""
                 ]);
             });
         });
 
         var csv = rows.map(function (row) {
             return row.map(function (cell) {
-                var s = String(cell).replace(/"/g, '""');
+                var s = String(cell).trim();
+                // Prevent CSV formula injection in Excel
+                if (/^[=+\-@\t\r]/.test(s)) {
+                    s = "'" + s;
+                }
+                s = s.replace(/"/g, '""');
                 return '"' + s + '"';
             }).join(",");
         }).join("\r\n");
@@ -779,6 +1138,8 @@
     // ── Logout ────────────────────────────────────────────────────────
 
     async function logout() {
+        stopIdleTimer();
+
         if (appMode === "spa") {
             if (!confirm("Sign out from Microsoft Graph?")) return;
 
@@ -794,6 +1155,8 @@
             groupAssignCounts = {};
             activeGroupId     = null;
             assignmentData    = null;
+            nestedData        = null;
+            orphanedData      = null;
             groupList.innerHTML    = "";
             groupCount.textContent = "0";
             groupSearch.value      = "";
@@ -811,7 +1174,9 @@
             }
 
             try {
-                var resp = await fetch("/api/logout", { method: "POST" });
+                var logoutHeaders = {};
+                if (_backendKey) logoutHeaders["X-Backend-Key"] = _backendKey;
+                var resp = await fetch("/api/logout", { method: "POST", headers: logoutHeaders });
                 var data = await resp.json().catch(function () { return {}; });
 
                 allGroups         = [];

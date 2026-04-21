@@ -6,7 +6,21 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; img-src 'self'; connect-src 'self' https://graph.microsoft.com https://login.microsoftonline.com; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
     <title>Tunedin Assignment Checker — ZeroToTrust</title>
     <link rel="stylesheet" href="/static/css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js" integrity="sha384-OJTwghM0Gh3Zc+gmd6l0lz1pFw9KuHHq0mSEZgmQEKgMnuSWWDb3bU9KzuD7w2hU" crossorigin="anonymous"></script>
+    <!-- MSAL.js: keep pinned to a current supported major. To update:
+         curl the new .min.js and generate the SRI hash with:
+           openssl dgst -sha384 -binary msal-browser.min.js | openssl base64 -A
+         Prefix the output with "sha384-" and test redirect + silent token flows
+         (sign-in, sign-out, token refresh after expiry) before committing. -->
+    <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@4.30.0/lib/msal-browser.min.js" integrity="sha384-RGxxfG5yRS8DLU7ZJ8OoLhbV/BsJFHyPuMVHrTLbpj3t5Z15LnviJmaznKY/a7LZ" crossorigin="anonymous"></script>
+    <!-- Framebuster: defence-in-depth for environments where frame-ancestors
+         cannot be delivered as a response header. The PowerShell backend also
+         sends X-Frame-Options: DENY. -->
+    <script>
+        if (window.top !== window.self) {
+            try { window.top.location = window.self.location; }
+            catch (e) { document.documentElement.innerHTML = ""; }
+        }
+    </script>
 </head>
 <body>
     <!-- Setup Screen (SPA mode only) -->
@@ -23,10 +37,10 @@
 
             <div class="setup-form">
                 <label class="setup-label" for="setupTenantId">Tenant ID</label>
-                <input class="setup-input" type="text" id="setupTenantId" placeholder="e.g. contoso.onmicrosoft.com or GUID" autocomplete="off">
+                <input class="setup-input" type="text" id="setupTenantId" placeholder="e.g. contoso.onmicrosoft.com or GUID" autocomplete="off" maxlength="253">
 
                 <label class="setup-label" for="setupClientId">Client ID (Application ID)</label>
-                <input class="setup-input" type="text" id="setupClientId" placeholder="e.g. 12345678-abcd-efgh-ijkl-123456789abc" autocomplete="off">
+                <input class="setup-input" type="text" id="setupClientId" placeholder="e.g. 12345678-abcd-efgh-ijkl-123456789abc" autocomplete="off" maxlength="36">
 
                 <button class="setup-btn" id="btnSetupConnect">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
@@ -42,7 +56,7 @@
                     <li>Go to <strong>Entra Portal</strong> (<a href="https://entra.microsoft.com" target="_blank" rel="noopener noreferrer">entra.microsoft.com</a>) &gt; <strong>App registrations</strong></li>
                     <li>Click <strong>New registration</strong></li>
                     <li>Name it (e.g. "Tunedin Assignment Checker")</li>
-                    <li>Set <strong>Redirect URI</strong> to <code>Single-page application (SPA)</code> with value:<br><code id="setupRedirectHint">https://dgulle.github.io/Intune-Assignment-Checker/</code></li>
+                    <li>Set <strong>Redirect URI</strong> to <code>Single-page application (SPA)</code> with value:<br><code id="setupRedirectHint">https://tunedin.zerototrust.tech/</code></li>
                     <li>Under <strong>API permissions</strong>, add Microsoft Graph <em>delegated</em> permissions:
                         <ul>
                             <li>DeviceManagementConfiguration.Read.All</li>
@@ -72,6 +86,10 @@
             <button class="btn-header active" id="btnShowAllUsers" title="Show/hide All Users assignments">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                 All Users
+            </button>
+            <button class="btn-header active" id="btnShowNested" title="Show/hide inherited assignments from parent groups">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><line x1="19" y1="1" x2="19" y2="7"/><line x1="16" y1="4" x2="22" y2="4"/></svg>
+                Nested Groups
             </button>
             <span class="connection-badge" id="connectionBadge">
                 <span class="badge-dot"></span>
@@ -136,6 +154,9 @@
             </div>
             <ul class="group-list" id="groupList">
                 <!-- Populated by JS -->
+            </ul>
+            <ul class="group-list-sticky" id="groupListSticky">
+                <!-- Synthetic groups (All Devices, All Users, Orphaned Items) — always visible -->
             </ul>
             <div class="sidebar-loading" id="sidebarLoading">
                 <div class="spinner"></div>
@@ -223,6 +244,11 @@
                         Remediations
                         <span class="tab-count" id="countRemediations">0</span>
                     </button>
+                    <button class="tab" data-category="groups" style="display:none">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        Groups
+                        <span class="tab-count" id="countGroups">0</span>
+                    </button>
                 </div>
 
                 <!-- Assignment cards -->
@@ -247,9 +273,15 @@
                     <span class="modal-title" id="scriptModalTitle">Script</span>
                     <span class="modal-subtitle" id="scriptModalFile"></span>
                 </span>
-                <button class="btn-modal-close" id="btnModalClose" title="Close">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
+                <span class="modal-actions">
+                    <button class="btn-copy-script" id="btnCopyScript" title="Copy script">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        <span id="copyBtnLabel">Copy Script</span>
+                    </button>
+                    <button class="btn-modal-close" id="btnModalClose" title="Close">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                </span>
             </div>
             <div class="modal-body" id="scriptModalBody">
                 <div class="modal-loading">

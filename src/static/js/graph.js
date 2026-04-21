@@ -19,6 +19,14 @@ var GraphClient = (function () {
         "User.Read.All"
     ];
 
+    var GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    function validateGuid(id, label) {
+        if (!id || !GUID_RE.test(id)) {
+            throw new Error("Invalid " + (label || "ID") + " format. Expected a valid GUID.");
+        }
+    }
+
     var msalInstance = null;
     var activeAccount = null;
     var initPromise = null; // tracks the full init+handleRedirect sequence
@@ -147,15 +155,30 @@ var GraphClient = (function () {
     // ── Graph API fetch with auth header and retry logic ────────────────
 
     var MAX_RETRIES = 3;
+    var FETCH_TIMEOUT_MS = 30000;
 
     async function graphFetch(url) {
         var token = await getToken();
         var attempt = 0;
 
         while (true) {
-            var resp = await fetch(url, {
-                headers: { "Authorization": "Bearer " + token }
-            });
+            var controller = new AbortController();
+            var timeoutId = setTimeout(function () { controller.abort(); }, FETCH_TIMEOUT_MS);
+
+            var resp;
+            try {
+                resp = await fetch(url, {
+                    headers: { "Authorization": "Bearer " + token },
+                    signal: controller.signal
+                });
+            } catch (err) {
+                clearTimeout(timeoutId);
+                if (err.name === "AbortError") {
+                    throw new Error("Request timed out after " + (FETCH_TIMEOUT_MS / 1000) + "s");
+                }
+                throw err;
+            }
+            clearTimeout(timeoutId);
 
             // Retry on 429 (throttled) or 5xx (server error)
             if ((resp.status === 429 || resp.status >= 500) && attempt < MAX_RETRIES) {
@@ -163,7 +186,7 @@ var GraphClient = (function () {
                 // Use Retry-After header if present, otherwise exponential backoff
                 var retryAfter = resp.headers.get("Retry-After");
                 var delay = retryAfter ? parseInt(retryAfter, 10) * 1000 : Math.pow(2, attempt) * 1000;
-                console.warn("Graph API " + resp.status + " on attempt " + attempt + ", retrying in " + delay + "ms: " + url);
+                console.warn("Graph API " + resp.status + " on attempt " + attempt + ", retrying in " + delay + "ms");
                 await new Promise(function (resolve) { setTimeout(resolve, delay); });
                 // Refresh token in case it expired during the wait
                 token = await getToken();
@@ -175,6 +198,13 @@ var GraphClient = (function () {
                 var msg = (body.error && body.error.message) || "HTTP " + resp.status;
                 throw new Error(msg);
             }
+
+            // Validate response Content-Type before parsing
+            var contentType = (resp.headers.get("Content-Type") || "").split(";")[0].trim();
+            if (contentType !== "application/json") {
+                throw new Error("Unexpected response type: " + contentType);
+            }
+
             return resp.json();
         }
     }
@@ -191,9 +221,17 @@ var GraphClient = (function () {
             }
             // Only follow nextLink if it points to the Graph API (prevent token leakage)
             var link = data["@odata.nextLink"] || null;
-            if (link && link.indexOf(GRAPH_BASE) !== 0) {
-                console.warn("Ignoring untrusted @odata.nextLink:", link);
-                link = null;
+            if (link) {
+                try {
+                    var parsed = new URL(link);
+                    if (parsed.protocol !== "https:" || parsed.hostname !== "graph.microsoft.com") {
+                        console.warn("Ignoring untrusted @odata.nextLink");
+                        link = null;
+                    }
+                } catch (e) {
+                    console.warn("Ignoring malformed @odata.nextLink");
+                    link = null;
+                }
             }
             nextUrl = link;
         }
@@ -231,7 +269,27 @@ var GraphClient = (function () {
         return { match: false };
     }
 
-    function buildItem(policy, assignmentInfo) {
+    function detectPlatform(item, categoryKey) {
+        if (categoryKey === "scripts" || categoryKey === "remediations") {
+            return "Windows";
+        }
+        if (categoryKey === "settingsCatalog") {
+            var platforms = (item.platforms || "").toLowerCase();
+            if (platforms.indexOf("windows") !== -1) return "Windows";
+            if (platforms.indexOf("ios") !== -1) return "iOS";
+            if (platforms.indexOf("macos") !== -1 || platforms.indexOf("macos") !== -1) return "macOS";
+            if (platforms.indexOf("android") !== -1) return "Android";
+            return "";
+        }
+        var odataType = (item["@odata.type"] || "").toLowerCase();
+        if (odataType.indexOf("ios") !== -1 || odataType.indexOf("iphone") !== -1) return "iOS";
+        if (odataType.indexOf("android") !== -1) return "Android";
+        if (odataType.indexOf("windows") !== -1 || odataType.indexOf("win32") !== -1 || odataType.indexOf("microsoftstore") !== -1 || odataType.indexOf("winget") !== -1) return "Windows";
+        if (odataType.indexOf("macos") !== -1) return "macOS";
+        return "";
+    }
+
+    function buildItem(policy, assignmentInfo, platform) {
         var a = assignmentInfo.source || {};
         return {
             id: policy.id,
@@ -240,19 +298,21 @@ var GraphClient = (function () {
             assignmentType: assignmentInfo.assignmentType,
             intent: a.intent || "",
             filterId: (a.target && a.target.deviceAndAppManagementAssignmentFilterId) || "",
-            filterType: (a.target && a.target.deviceAndAppManagementAssignmentFilterType) || "none"
+            filterType: (a.target && a.target.deviceAndAppManagementAssignmentFilterType) || "none",
+            platform: platform || ""
         };
     }
 
-    async function getAssignmentsForCategory(url, groupId) {
+    async function getAssignmentsForCategory(url, groupId, categoryKey) {
         var items = await graphFetchAll(url);
         var matched = [];
         items.forEach(function (item) {
             var assignments = item.assignments || [];
+            var platform = detectPlatform(item, categoryKey);
             assignments.forEach(function (a) {
                 var info = extractAssignment(a, groupId);
                 if (info.match) {
-                    matched.push(buildItem(item, { assignmentType: info.assignmentType, source: a }));
+                    matched.push(buildItem(item, { assignmentType: info.assignmentType, source: a }, platform));
                 }
             });
         });
@@ -262,7 +322,7 @@ var GraphClient = (function () {
     async function getAssignmentsByTargetType(targetOdataType, label) {
         var endpoints = {
             configurations: GRAPH_BASE + "/beta/deviceManagement/deviceConfigurations?$expand=assignments&$select=id,displayName,description,assignments",
-            settingsCatalog: GRAPH_BASE + "/beta/deviceManagement/configurationPolicies?$expand=assignments&$select=id,name,description,assignments",
+            settingsCatalog: GRAPH_BASE + "/beta/deviceManagement/configurationPolicies?$expand=assignments&$select=id,name,description,assignments,platforms",
             applications: GRAPH_BASE + "/beta/deviceAppManagement/mobileApps?$expand=assignments&$filter=isAssigned eq true&$select=id,displayName,description,assignments",
             scripts: GRAPH_BASE + "/beta/deviceManagement/deviceManagementScripts?$expand=assignments&$select=id,displayName,description,assignments",
             remediations: GRAPH_BASE + "/beta/deviceManagement/deviceHealthScripts?$expand=assignments&$select=id,displayName,description,assignments"
@@ -273,10 +333,11 @@ var GraphClient = (function () {
             return graphFetchAll(endpoints[key]).then(function (items) {
                 var matched = [];
                 items.forEach(function (item) {
+                    var platform = detectPlatform(item, key);
                     (item.assignments || []).forEach(function (a) {
                         var t = (a.target && a.target["@odata.type"]) || "";
                         if (t === targetOdataType) {
-                            matched.push(buildItem(item, { assignmentType: label, source: a }));
+                            matched.push(buildItem(item, { assignmentType: label, source: a }, platform));
                         }
                     });
                 });
@@ -308,9 +369,10 @@ var GraphClient = (function () {
     }
 
     async function getAssignmentsForGroup(groupId) {
+        validateGuid(groupId, "group ID");
         var endpoints = {
             configurations: GRAPH_BASE + "/beta/deviceManagement/deviceConfigurations?$expand=assignments&$select=id,displayName,description,assignments",
-            settingsCatalog: GRAPH_BASE + "/beta/deviceManagement/configurationPolicies?$expand=assignments&$select=id,name,description,assignments",
+            settingsCatalog: GRAPH_BASE + "/beta/deviceManagement/configurationPolicies?$expand=assignments&$select=id,name,description,assignments,platforms",
             applications: GRAPH_BASE + "/beta/deviceAppManagement/mobileApps?$expand=assignments&$filter=isAssigned eq true&$select=id,displayName,description,assignments",
             scripts: GRAPH_BASE + "/beta/deviceManagement/deviceManagementScripts?$expand=assignments&$select=id,displayName,description,assignments",
             remediations: GRAPH_BASE + "/beta/deviceManagement/deviceHealthScripts?$expand=assignments&$select=id,displayName,description,assignments"
@@ -318,7 +380,7 @@ var GraphClient = (function () {
 
         var keys = Object.keys(endpoints);
         var promises = keys.map(function (key) {
-            return getAssignmentsForCategory(endpoints[key], groupId)
+            return getAssignmentsForCategory(endpoints[key], groupId, key)
                 .catch(function (err) {
                     console.error("Failed to fetch " + key + ":", err);
                     return { _error: err.message || "Failed to load" };
@@ -342,6 +404,146 @@ var GraphClient = (function () {
                 });
             }
         });
+        return data;
+    }
+
+    async function getGroupParents(groupId) {
+        validateGuid(groupId, "group ID");
+        var url = GRAPH_BASE + "/v1.0/groups/" + groupId + "/transitiveMemberOf/microsoft.graph.group?$select=id,displayName&$top=999";
+        return graphFetchAll(url);
+    }
+
+    async function getNestedAssignments(groupId) {
+        validateGuid(groupId, "group ID");
+        var parents = await getGroupParents(groupId);
+        if (!parents || parents.length === 0) {
+            return {
+                configurations: [], settingsCatalog: [], applications: [],
+                scripts: [], remediations: [], _errors: {}
+            };
+        }
+
+        // Build lookup of parent group IDs to names
+        var parentLookup = {};
+        parents.forEach(function (p) {
+            if (p.id) parentLookup[p.id] = p.displayName || p.id;
+        });
+
+        var endpoints = {
+            configurations: GRAPH_BASE + "/beta/deviceManagement/deviceConfigurations?$expand=assignments&$select=id,displayName,description,assignments",
+            settingsCatalog: GRAPH_BASE + "/beta/deviceManagement/configurationPolicies?$expand=assignments&$select=id,name,description,assignments,platforms",
+            applications: GRAPH_BASE + "/beta/deviceAppManagement/mobileApps?$expand=assignments&$filter=isAssigned eq true&$select=id,displayName,description,assignments",
+            scripts: GRAPH_BASE + "/beta/deviceManagement/deviceManagementScripts?$expand=assignments&$select=id,displayName,description,assignments",
+            remediations: GRAPH_BASE + "/beta/deviceManagement/deviceHealthScripts?$expand=assignments&$select=id,displayName,description,assignments"
+        };
+
+        var keys = Object.keys(endpoints);
+        var promises = keys.map(function (key) {
+            return graphFetchAll(endpoints[key]).then(function (items) {
+                var matched = [];
+                items.forEach(function (item) {
+                    var platform = detectPlatform(item, key);
+                    (item.assignments || []).forEach(function (a) {
+                        var t = a.target || {};
+                        var tGroupId = t.groupId || null;
+                        if (tGroupId && parentLookup[tGroupId]) {
+                            var odataType = t["@odata.type"] || "";
+                            var assignmentType = odataType.indexOf("exclusion") !== -1 ? "Exclude" : "Include";
+                            var built = buildItem(item, { assignmentType: assignmentType, source: a }, platform);
+                            built.inheritedFrom = parentLookup[tGroupId];
+                            built.inheritedFromId = tGroupId;
+                            matched.push(built);
+                        }
+                    });
+                });
+                return matched;
+            }).catch(function (err) {
+                console.error("Failed to fetch nested " + key + ":", err);
+                return { _error: err.message || "Failed to load" };
+            });
+        });
+
+        var results = await Promise.all(promises);
+        var data = { _errors: {} };
+        keys.forEach(function (key, i) {
+            if (results[i] && results[i]._error) {
+                data[key] = [];
+                data._errors[key] = results[i]._error;
+            } else {
+                data[key] = results[i];
+            }
+            if (key === "settingsCatalog" && Array.isArray(data[key])) {
+                data[key].forEach(function (item) {
+                    if (!item.displayName && item.name) item.displayName = item.name;
+                });
+            }
+        });
+        return data;
+    }
+
+    async function getOrphanedItems(allGroups, assignedGroupIdSet) {
+        var endpoints = {
+            configurations: GRAPH_BASE + "/beta/deviceManagement/deviceConfigurations?$expand=assignments&$select=id,displayName,description,assignments",
+            settingsCatalog: GRAPH_BASE + "/beta/deviceManagement/configurationPolicies?$expand=assignments&$select=id,name,description,assignments,platforms",
+            applications: GRAPH_BASE + "/beta/deviceAppManagement/mobileApps?$expand=assignments&$select=id,displayName,description,assignments",
+            scripts: GRAPH_BASE + "/beta/deviceManagement/deviceManagementScripts?$expand=assignments&$select=id,displayName,description,assignments",
+            remediations: GRAPH_BASE + "/beta/deviceManagement/deviceHealthScripts?$expand=assignments&$select=id,displayName,description,assignments"
+        };
+
+        var keys = Object.keys(endpoints);
+        var promises = keys.map(function (key) {
+            return graphFetchAll(endpoints[key]).then(function (items) {
+                var orphaned = [];
+                items.forEach(function (item) {
+                    var assignments = item.assignments || [];
+                    if (assignments.length === 0) {
+                        orphaned.push({
+                            id: item.id,
+                            displayName: item.displayName || item.name || "Unnamed",
+                            description: item.description || "",
+                            platform: detectPlatform(item, key)
+                        });
+                    }
+                });
+                return orphaned;
+            }).catch(function (err) {
+                console.error("Failed to fetch orphaned " + key + ":", err);
+                return { _error: err.message || "Failed to load" };
+            });
+        });
+
+        var results = await Promise.all(promises);
+        var data = { _errors: {} };
+        keys.forEach(function (key, i) {
+            if (results[i] && results[i]._error) {
+                data[key] = [];
+                data._errors[key] = results[i]._error;
+            } else {
+                data[key] = results[i];
+            }
+            if (key === "settingsCatalog" && Array.isArray(data[key])) {
+                data[key].forEach(function (item) {
+                    if (!item.displayName && item.name) item.displayName = item.name;
+                });
+            }
+        });
+
+        // Compute unassigned groups (groups with no Intune assignments)
+        var unassignedGroups = [];
+        if (allGroups && assignedGroupIdSet) {
+            allGroups.forEach(function (g) {
+                if (!assignedGroupIdSet.has(g.id)) {
+                    unassignedGroups.push({
+                        id: g.id,
+                        displayName: g.displayName || "Unnamed",
+                        description: g.description || "",
+                        groupType: (g.groupTypes && g.groupTypes.indexOf("DynamicMembership") !== -1) ? "Dynamic" : "Assigned"
+                    });
+                }
+            });
+        }
+        data.groups = unassignedGroups;
+
         return data;
     }
 
@@ -374,6 +576,7 @@ var GraphClient = (function () {
     }
 
     async function getScriptContent(scriptId) {
+        validateGuid(scriptId, "script ID");
         var data = await graphFetch(
             GRAPH_BASE + "/beta/deviceManagement/deviceManagementScripts/" + scriptId
         );
@@ -435,6 +638,9 @@ var GraphClient = (function () {
         getAssignedGroupIds: getAssignedGroupIds,
         getAssignmentsForGroup: getAssignmentsForGroup,
         getAssignmentsByTargetType: getAssignmentsByTargetType,
-        getScriptContent: getScriptContent
+        getScriptContent: getScriptContent,
+        getGroupParents: getGroupParents,
+        getNestedAssignments: getNestedAssignments,
+        getOrphanedItems: getOrphanedItems
     };
 })();

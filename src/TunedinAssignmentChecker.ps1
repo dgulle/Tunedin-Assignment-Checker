@@ -5,11 +5,13 @@
 .DESCRIPTION
     This script:
       1. Installs the Microsoft.Graph.Authentication module if missing.
-      2. Prompts the user to sign in with their Entra ID credentials (interactive browser flow).
-      3. Automatically requests the required Microsoft Graph permissions (consent prompt).
+      2. Connects to Microsoft Graph via the "Microsoft Graph Command Line Tools"
+         enterprise application (no custom app registration required).
+      3. Opens a browser for interactive sign-in and consent to the required
+         permissions (only on first use or when new scopes are added).
       4. Starts a local web server and opens the dashboard in the default browser.
 
-    No manual app registrations, client secrets, or portal configuration required.
+    No app registrations, client secrets, or portal configuration required.
 
 .NOTES
     Requires PowerShell 5.1+ (Windows PowerShell) or PowerShell 7+ (cross-platform).
@@ -25,8 +27,40 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+$script:CurrentVersion = "1.0.0"
+$script:GitHubRepo     = "dgulle/Tunedin-Assignment-Checker"
+
 # -----------------------------------------------------------------------------
-# 1. Ensure the Microsoft Graph Authentication module is available
+# 1. Check for updates via GitHub Releases
+# -----------------------------------------------------------------------------
+
+function Test-ForUpdate {
+    try {
+        $releaseUrl = "https://api.github.com/repos/$($script:GitHubRepo)/releases/latest"
+        $headers = @{ "User-Agent" = "TunedinAssignmentChecker/$($script:CurrentVersion)" }
+        $release = Invoke-RestMethod -Uri $releaseUrl -Headers $headers -TimeoutSec 5 -ErrorAction Stop
+
+        $latestTag = ($release.tag_name -replace '^v', '').Trim()
+        $current   = $script:CurrentVersion.Trim()
+
+        if ([System.Version]$latestTag -gt [System.Version]$current) {
+            Write-Host ""
+            Write-Host "  -------------------------------------------------------" -ForegroundColor Yellow
+            Write-Host "  A new version is available: v$latestTag (current: v$current)" -ForegroundColor Yellow
+            Write-Host "  Download: $($release.html_url)" -ForegroundColor Yellow
+            Write-Host "  -------------------------------------------------------" -ForegroundColor Yellow
+            Write-Host ""
+        }
+    }
+    catch {
+        # Silently ignore update check failures (no internet, rate limit, etc.)
+    }
+}
+
+Test-ForUpdate
+
+# -----------------------------------------------------------------------------
+# 2. Ensure the Microsoft Graph Authentication module is available
 # -----------------------------------------------------------------------------
 
 $moduleName = "Microsoft.Graph.Authentication"
@@ -36,7 +70,7 @@ if (-not (Get-Module -ListAvailable -Name $moduleName)) {
     Write-Host "  Installing $moduleName module (one-time setup)..." -ForegroundColor Cyan
     Write-Host ""
     try {
-        Install-Module -Name $moduleName -Scope CurrentUser -Force -AllowClobber -Repository PSGallery
+        Install-Module -Name $moduleName -Scope CurrentUser -Force -AllowClobber -Repository PSGallery -MinimumVersion 2.0.0
         Write-Host "  Module installed successfully." -ForegroundColor Green
     }
     catch {
@@ -48,15 +82,16 @@ if (-not (Get-Module -ListAvailable -Name $moduleName)) {
 Import-Module $moduleName -ErrorAction Stop
 
 # -----------------------------------------------------------------------------
-# 2. Connect to Microsoft Graph with required scopes (interactive sign-in)
+# 3. Connect to Microsoft Graph with required scopes (interactive sign-in)
 # -----------------------------------------------------------------------------
 
 $requiredScopes = @(
-    "DeviceManagementConfiguration.Read.All"
     "DeviceManagementApps.Read.All"
+    "DeviceManagementConfiguration.Read.All"
     "DeviceManagementManagedDevices.Read.All"
     "DeviceManagementScripts.Read.All"
     "Group.Read.All"
+    "User.Read"
     "User.Read.All"
 )
 
@@ -64,9 +99,13 @@ Write-Host ""
 Write-Host "  ======================================================" -ForegroundColor Magenta
 Write-Host "         Tunedin Assignment Checker                     " -ForegroundColor Magenta
 Write-Host "  ======================================================" -ForegroundColor Magenta
+Write-Host "  No app registration required.                         " -ForegroundColor Magenta
+Write-Host "  Permissions are requested via Microsoft Graph          " -ForegroundColor Magenta
+Write-Host "  Command Line Tools.                                   " -ForegroundColor Magenta
+Write-Host "                                                        " -ForegroundColor Magenta
 Write-Host "  A browser window will open for sign-in.               " -ForegroundColor Magenta
-Write-Host "  Sign in with your Entra ID credentials and            " -ForegroundColor Magenta
-Write-Host "  accept the requested permissions.                     " -ForegroundColor Magenta
+Write-Host "  You may be prompted to consent to permissions         " -ForegroundColor Magenta
+Write-Host "  on first use.                                         " -ForegroundColor Magenta
 Write-Host "  ======================================================" -ForegroundColor Magenta
 Write-Host ""
 
@@ -83,7 +122,26 @@ catch {
 }
 
 # -----------------------------------------------------------------------------
-# 3. Graph API helper functions
+# 3a. Per-launch session state: API secret and idle-timeout tracking
+# -----------------------------------------------------------------------------
+
+# High-entropy random secret bound to this launch. Only the browser window
+# opened by this script ever sees it (delivered via URL fragment). Any
+# other local process that hits the listener without this key is rejected
+# from /api/* routes so it cannot piggyback on the Graph session.
+$script:apiSecretBytes = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($script:apiSecretBytes)
+$script:apiSecret = ([Convert]::ToBase64String($script:apiSecretBytes)).TrimEnd('=').Replace('+','-').Replace('/','_')
+
+# Idle timeout: disconnect Graph after this many seconds of inactivity.
+# Matches the SPA-side timer (30 min) so an abandoned terminal does not
+# leave delegated Graph access available indefinitely.
+$script:idleTimeoutSec   = 30 * 60
+$script:lastActivityTime = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+$script:sessionExpired   = $false
+
+# -----------------------------------------------------------------------------
+# 4. Graph API helper functions
 # -----------------------------------------------------------------------------
 
 function Invoke-GraphPaginated {
@@ -110,19 +168,19 @@ function Invoke-GraphPaginated {
             }
             catch {
                 $statusCode = 0
-                if ($_.Exception.Response) {
-                    $statusCode = [int]$_.Exception.Response.StatusCode
+                $respProp = $_.Exception.PSObject.Properties['Response']
+                if ($respProp) {
+                    $statusCode = [int]$respProp.Value.StatusCode
                 }
                 # Retry on 429 (throttled) or 5xx (server error)
                 if (($statusCode -eq 429 -or $statusCode -ge 500) -and $attempt -lt $maxRetries) {
                     $delay = [Math]::Pow(2, $attempt + 1)
-                    $safeUri = ($nextUri -split '\?')[0]
-                    Write-Warning "Graph API $statusCode on attempt $($attempt + 1), retrying in ${delay}s: $safeUri"
+                    Write-Warning "Graph API $statusCode on attempt $($attempt + 1), retrying in ${delay}s"
                     Start-Sleep -Seconds $delay
                     continue
                 }
                 $safeUri = ($nextUri -split '\?')[0]
-                Write-Warning "Graph request failed for $safeUri : $($_.Exception.Message)"
+                Write-Warning "Graph request failed for $safeUri (HTTP $statusCode)"
                 if ($SilentErrors) { $nextUri = $null; break }
                 throw
             }
@@ -141,6 +199,20 @@ function Invoke-GraphPaginated {
             $nextUri = $response.'@odata.nextLink'
         } else {
             $nextUri = $null
+        }
+
+        # Validate nextLink to prevent token leakage to untrusted hosts
+        if ($nextUri) {
+            try {
+                $parsedLink = [System.Uri]::new($nextUri)
+                if ($parsedLink.Scheme -ne 'https' -or $parsedLink.Host -ne 'graph.microsoft.com') {
+                    Write-Warning "Ignoring untrusted @odata.nextLink host: $($parsedLink.Host)"
+                    $nextUri = $null
+                }
+            } catch {
+                Write-Warning "Ignoring malformed @odata.nextLink"
+                $nextUri = $null
+            }
         }
     }
 
@@ -173,6 +245,34 @@ function Get-SafeValue {
     $prop = $Object.PSObject.Properties.Match($Key)
     if ($prop.Count) { return $prop[0].Value }
     return $null
+}
+
+function Get-ItemPlatform {
+    param([object]$Item, [string]$CategoryKey)
+
+    if ($CategoryKey -eq 'scripts' -or $CategoryKey -eq 'remediations') {
+        return "Windows"
+    }
+    if ($CategoryKey -eq 'settingsCatalog') {
+        $platforms = Get-SafeValue $Item 'platforms'
+        if ($platforms) {
+            $p = "$platforms".ToLower()
+            if ($p -match 'windows') { return "Windows" }
+            if ($p -match 'ios')     { return "iOS" }
+            if ($p -match 'macos')   { return "macOS" }
+            if ($p -match 'android') { return "Android" }
+        }
+        return ""
+    }
+    $odataType = Get-SafeValue $Item '@odata.type'
+    if ($odataType) {
+        $t = "$odataType".ToLower()
+        if ($t -match 'ios|iphone')                   { return "iOS" }
+        if ($t -match 'android')                      { return "Android" }
+        if ($t -match 'windows|win32|microsoftstore|winget') { return "Windows" }
+        if ($t -match 'macos')                        { return "macOS" }
+    }
+    return ""
 }
 
 function Get-AssignmentsForGroup {
@@ -242,6 +342,7 @@ function Get-AssignmentsForGroup {
                         intent          = if ($assignIntent) { $assignIntent } else { "" }
                         filterId        = if ($filterId) { $filterId } else { "" }
                         filterType      = if ($filterType) { $filterType } else { "" }
+                        platform        = Get-ItemPlatform -Item $item -CategoryKey $cat.Key
                     })
                     # Don't break — same item may match as both group + All Devices/Users
                 }
@@ -252,6 +353,203 @@ function Get-AssignmentsForGroup {
     }
 
     $result['_errors'] = $_errors
+    return $result
+}
+
+function Get-GroupParentGroups {
+    <#
+    .SYNOPSIS
+        Returns the transitive group memberships for a given group.
+        This reveals which parent groups this group is nested within.
+    #>
+    param([Parameter(Mandatory)][string]$GroupId)
+
+    $uri = "/v1.0/groups/$GroupId/transitiveMemberOf/microsoft.graph.group?`$select=id,displayName&`$top=999"
+    $parents = @(Invoke-GraphPaginated -Uri $uri -SilentErrors)
+    return $parents
+}
+
+function Get-NestedGroupAssignments {
+    <#
+    .SYNOPSIS
+        For a given group, finds all assignments that come through parent group
+        memberships (nested/inherited assignments).
+    #>
+    param(
+        [Parameter(Mandatory)][string]$GroupId,
+        [Parameter(Mandatory)][array]$ParentGroups
+    )
+
+    $categories = @{
+        configurations  = "/beta/deviceManagement/deviceConfigurations?`$expand=assignments"
+        settingsCatalog = "/beta/deviceManagement/configurationPolicies?`$expand=assignments"
+        applications    = "/beta/deviceAppManagement/mobileApps?`$expand=assignments&`$filter=isAssigned eq true"
+        scripts         = "/beta/deviceManagement/deviceManagementScripts?`$expand=assignments"
+        remediations    = "/beta/deviceManagement/deviceHealthScripts?`$expand=assignments"
+    }
+
+    # Build a lookup of parent group IDs to names
+    $parentLookup = @{}
+    foreach ($pg in $ParentGroups) {
+        $pgId = Get-SafeValue $pg 'id'
+        $pgName = Get-SafeValue $pg 'displayName'
+        if ($pgId) { $parentLookup[$pgId] = if ($pgName) { $pgName } else { $pgId } }
+    }
+
+    $result  = @{}
+    $_errors = @{}
+
+    foreach ($cat in $categories.GetEnumerator()) {
+        $matched = [System.Collections.ArrayList]::new()
+        try {
+            $items = @(Invoke-GraphPaginated -Uri $cat.Value)
+        }
+        catch {
+            $_errors[$cat.Key] = $_.Exception.Message
+            $result[$cat.Key]  = @()
+            continue
+        }
+
+        foreach ($item in $items) {
+            $itemAssignments = Get-SafeValue $item 'assignments'
+            if (-not $itemAssignments) { continue }
+
+            foreach ($assignment in $itemAssignments) {
+                $target = Get-SafeValue $assignment 'target'
+                if (-not $target) { continue }
+
+                $targetGroupId = Get-SafeValue $target 'groupId'
+                $targetType    = Get-SafeValue $target '@odata.type'
+
+                # Check if assignment targets a parent group
+                if ($targetGroupId -and $parentLookup.ContainsKey($targetGroupId)) {
+                    $friendly = switch ($targetType) {
+                        "#microsoft.graph.groupAssignmentTarget"          { "Include" }
+                        "#microsoft.graph.exclusionGroupAssignmentTarget" { "Exclude" }
+                        default { $targetType }
+                    }
+
+                    $itemDisplayName = Get-SafeValue $item 'displayName'
+                    $itemName        = Get-SafeValue $item 'name'
+                    $displayName     = if ($itemDisplayName) { $itemDisplayName } elseif ($itemName) { $itemName } else { "N/A" }
+                    $itemDesc        = Get-SafeValue $item 'description'
+                    $assignIntent    = Get-SafeValue $assignment 'intent'
+                    $filterId        = Get-SafeValue $target 'deviceAndAppManagementAssignmentFilterId'
+                    $filterType      = Get-SafeValue $target 'deviceAndAppManagementAssignmentFilterType'
+
+                    [void]$matched.Add(@{
+                        id              = Get-SafeValue $item 'id'
+                        displayName     = $displayName
+                        description     = if ($itemDesc) { $itemDesc } else { "" }
+                        assignmentType  = $friendly
+                        intent          = if ($assignIntent) { $assignIntent } else { "" }
+                        filterId        = if ($filterId) { $filterId } else { "" }
+                        filterType      = if ($filterType) { $filterType } else { "" }
+                        inheritedFrom   = $parentLookup[$targetGroupId]
+                        inheritedFromId = $targetGroupId
+                        platform        = Get-ItemPlatform -Item $item -CategoryKey $cat.Key
+                    })
+                }
+            }
+        }
+
+        $result[$cat.Key] = @($matched.ToArray())
+    }
+
+    $result['_errors'] = $_errors
+    return $result
+}
+
+function Get-OrphanedItems {
+    <#
+    .SYNOPSIS
+        Returns all Intune items (policies, apps, scripts, remediations) that have
+        zero assignments — i.e. orphaned items that may be candidates for cleanup.
+    #>
+    $categories = @{
+        configurations  = "/beta/deviceManagement/deviceConfigurations?`$expand=assignments"
+        settingsCatalog = "/beta/deviceManagement/configurationPolicies?`$expand=assignments"
+        applications    = "/beta/deviceAppManagement/mobileApps?`$expand=assignments&`$select=id,displayName,description,assignments"
+        scripts         = "/beta/deviceManagement/deviceManagementScripts?`$expand=assignments"
+        remediations    = "/beta/deviceManagement/deviceHealthScripts?`$expand=assignments"
+    }
+
+    $result  = @{}
+    $_errors = @{}
+
+    foreach ($cat in $categories.GetEnumerator()) {
+        $orphaned = [System.Collections.ArrayList]::new()
+        try {
+            $items = @(Invoke-GraphPaginated -Uri $cat.Value)
+        }
+        catch {
+            Write-Warning "Orphaned check for $($cat.Key) failed: $($_.Exception.Message)"
+            $_errors[$cat.Key] = $_.Exception.Message
+            $result[$cat.Key]  = @()
+            continue
+        }
+
+        foreach ($item in $items) {
+            $itemAssignments = Get-SafeValue $item 'assignments'
+            $assignCount = 0
+            if ($itemAssignments) {
+                $assignCount = @($itemAssignments).Count
+            }
+
+            if ($assignCount -eq 0) {
+                $itemDisplayName = Get-SafeValue $item 'displayName'
+                $itemName        = Get-SafeValue $item 'name'
+                $displayName     = if ($itemDisplayName) { $itemDisplayName } elseif ($itemName) { $itemName } else { "N/A" }
+                $itemDesc        = Get-SafeValue $item 'description'
+
+                [void]$orphaned.Add(@{
+                    id          = Get-SafeValue $item 'id'
+                    displayName = $displayName
+                    description = if ($itemDesc) { $itemDesc } else { "" }
+                    platform    = Get-ItemPlatform -Item $item -CategoryKey $cat.Key
+                })
+            }
+        }
+
+        $result[$cat.Key] = @($orphaned.ToArray())
+    }
+
+    $result['_errors'] = $_errors
+
+    # Compute unassigned groups (groups with no Intune assignments)
+    try {
+        $allGroupsList  = @(Get-AllGroups)
+        $assignedResult = Get-AssignedGroupIds
+        $assignedSet    = @{}
+        foreach ($gid in $assignedResult.ids) { $assignedSet[$gid] = $true }
+
+        $unassigned = [System.Collections.ArrayList]::new()
+        foreach ($grp in $allGroupsList) {
+            $grpId = Get-SafeValue $grp 'id'
+            if ($grpId -and -not $assignedSet.ContainsKey($grpId)) {
+                $grpDisplayName = Get-SafeValue $grp 'displayName'
+                $grpDesc        = Get-SafeValue $grp 'description'
+                $grpTypes       = Get-SafeValue $grp 'groupTypes'
+                $groupType      = "Assigned"
+                if ($grpTypes -and ($grpTypes -contains "DynamicMembership")) {
+                    $groupType = "Dynamic"
+                }
+                [void]$unassigned.Add(@{
+                    id          = $grpId
+                    displayName = if ($grpDisplayName) { $grpDisplayName } else { "Unnamed" }
+                    description = if ($grpDesc) { $grpDesc } else { "" }
+                    groupType   = $groupType
+                })
+            }
+        }
+        $result['groups'] = @($unassigned.ToArray())
+    }
+    catch {
+        Write-Warning "Unassigned groups check failed: $($_.Exception.Message)"
+        $result['_errors']['groups'] = $_.Exception.Message
+        $result['groups']  = @()
+    }
+
     return $result
 }
 
@@ -356,6 +654,7 @@ function Get-AssignmentsByTargetType {
                     intent          = if ($assignIntent) { $assignIntent } else { "" }
                     filterId        = if ($filterId) { $filterId } else { "" }
                     filterType      = if ($filterType) { $filterType } else { "" }
+                    platform        = Get-ItemPlatform -Item $item -CategoryKey $cat.Key
                 })
             }
         }
@@ -368,7 +667,7 @@ function Get-AssignmentsByTargetType {
 }
 
 # -----------------------------------------------------------------------------
-# 4. JSON serialization helper
+# 5. JSON serialization helper
 # -----------------------------------------------------------------------------
 
 function ConvertTo-SafeJson {
@@ -404,13 +703,44 @@ function Set-SecurityHeaders {
     $Response.Headers.Set("X-Content-Type-Options", "nosniff")
     $Response.Headers.Set("X-Frame-Options", "DENY")
     $Response.Headers.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+    $Response.Headers.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()")
+    $Response.Headers.Set("X-Permitted-Cross-Domain-Policies", "none")
     $csp = "default-src 'none'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; img-src 'self'; " +
            "connect-src 'self' https://graph.microsoft.com https://login.microsoftonline.com; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
     $Response.Headers.Set("Content-Security-Policy", $csp)
+
+    # CORS: restrict cross-origin requests to same localhost origin
+    $Response.Headers.Set("Access-Control-Allow-Origin", "http://localhost:$Port")
+    $Response.Headers.Set("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS")
+    $Response.Headers.Set("Access-Control-Allow-Headers", "Content-Type, X-Backend-Key")
+}
+
+function Test-ApiOrigin {
+    <#
+    .SYNOPSIS
+        Validates that an API request originates from the expected localhost origin.
+        Returns $true if valid, $false if the request should be rejected.
+    #>
+    param(
+        [Parameter(Mandatory)][System.Net.HttpListenerRequest]$Request
+    )
+
+    $origin  = $Request.Headers["Origin"]
+    $referer = $Request.Headers["Referer"]
+    $expectedOrigin = "http://localhost:$Port"
+
+    if ($origin) {
+        return ($origin -eq $expectedOrigin)
+    } elseif ($referer) {
+        return $referer.StartsWith("$expectedOrigin/")
+    }
+    # Browser-initiated requests always send Origin or Referer;
+    # allow requests with neither (e.g. curl, PowerShell, direct browser navigation)
+    return $true
 }
 
 # -----------------------------------------------------------------------------
-# 5. Resolve static file paths
+# 6. Resolve static file paths
 # -----------------------------------------------------------------------------
 
 $scriptDir = $PSScriptRoot
@@ -430,7 +760,7 @@ $mimeTypes = @{
 }
 
 # -----------------------------------------------------------------------------
-# 6. Start the HTTP listener
+# 7. Start the HTTP listener
 # -----------------------------------------------------------------------------
 
 $listener = New-Object System.Net.HttpListener
@@ -450,18 +780,32 @@ Write-Host "  Web server running at http://localhost:$Port          " -Foregroun
 Write-Host "  Press Ctrl+C to stop.                                " -ForegroundColor Cyan
 Write-Host "  ======================================================" -ForegroundColor Cyan
 Write-Host ""
+Write-Host "  NOTE: The server uses HTTP (not HTTPS). This is acceptable" -ForegroundColor Yellow
+Write-Host "  for localhost-only access, but traffic could be observed by" -ForegroundColor Yellow
+Write-Host "  other processes on this machine with elevated privileges." -ForegroundColor Yellow
+Write-Host ""
 
-# Open default browser
+# Open default browser. The API secret is passed as a URL fragment so it is
+# never sent on the wire (fragments stay client-side) and so other local
+# processes that simply GET / cannot learn it. The SPA reads the fragment,
+# scrubs it from the address bar, and attaches it as X-Backend-Key on every
+# /api/* call.
+$launchUrl = "http://localhost:$Port/#k=$script:apiSecret"
 try {
-    Start-Process "http://localhost:$Port"
+    Start-Process $launchUrl
 }
 catch {
-    Write-Host "  Open http://localhost:$Port in your browser." -ForegroundColor Yellow
+    Write-Host "  Open $launchUrl in your browser." -ForegroundColor Yellow
 }
 
 # -----------------------------------------------------------------------------
-# 7. Request loop
+# 8. Request loop
 # -----------------------------------------------------------------------------
+
+# Rate limiting: sliding window of request timestamps
+$script:rateLimitTimestamps = [System.Collections.ArrayList]::new()
+$script:rateLimitMax        = 120   # max requests per window
+$script:rateLimitWindowSec  = 60    # window size in seconds
 
 try {
     while ($listener.IsListening) {
@@ -477,8 +821,110 @@ try {
         try {
             Set-SecurityHeaders -Response $resp
 
+            # -- Rate limiting -----------------------------------------
+            $nowTicks = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            $cutoff   = $nowTicks - $script:rateLimitWindowSec
+            $script:rateLimitTimestamps = [System.Collections.ArrayList]@(
+                $script:rateLimitTimestamps | Where-Object { $_ -gt $cutoff }
+            )
+            if ($script:rateLimitTimestamps.Count -ge $script:rateLimitMax) {
+                $resp.StatusCode = 429
+                $body   = '{"error":"Too many requests. Please try again later."}'
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                $resp.ContentType     = "application/json; charset=utf-8"
+                $resp.ContentLength64 = $buffer.Length
+                $resp.Headers.Set("Retry-After", "10")
+                $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                $resp.OutputStream.Close()
+                continue
+            }
+            [void]$script:rateLimitTimestamps.Add($nowTicks)
+
+            # -- CORS preflight ----------------------------------------
+            if ($req.HttpMethod -eq "OPTIONS") {
+                $resp.StatusCode = 204
+                $resp.OutputStream.Close()
+                continue
+            }
+
+            # -- Origin validation for API routes ----------------------
+            if ($path.StartsWith("/api/") -and -not (Test-ApiOrigin -Request $req)) {
+                $resp.StatusCode = 403
+                $body   = '{"error":"Forbidden: invalid origin."}'
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                $resp.ContentType     = "application/json; charset=utf-8"
+                $resp.ContentLength64 = $buffer.Length
+                $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                $resp.OutputStream.Close()
+                continue
+            }
+
+            # -- API secret validation (per-launch token) --------------
+            # Reject any /api/* request that does not present the launch
+            # secret. This blocks other local processes from piggybacking
+            # on the signed-in Graph session even if they forge Origin.
+            if ($path.StartsWith("/api/")) {
+                $providedKey = $req.Headers["X-Backend-Key"]
+                $expected    = $script:apiSecret
+                $isValid     = $false
+                if ($providedKey -and $expected -and $providedKey.Length -eq $expected.Length) {
+                    # Constant-time compare to avoid timing side channels.
+                    $diff = 0
+                    for ($i = 0; $i -lt $expected.Length; $i++) {
+                        $diff = $diff -bor ([int][char]$providedKey[$i] -bxor [int][char]$expected[$i])
+                    }
+                    $isValid = ($diff -eq 0)
+                }
+                if (-not $isValid) {
+                    $resp.StatusCode = 401
+                    $body   = '{"error":"Unauthorized: missing or invalid backend key."}'
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                    $resp.OutputStream.Close()
+                    continue
+                }
+            }
+
+            # -- Idle timeout enforcement ------------------------------
+            # After $script:idleTimeoutSec of inactivity, disconnect
+            # Graph and reject further /api/* calls until the script is
+            # restarted. This prevents an abandoned terminal from leaving
+            # delegated Graph access open indefinitely.
+            if ($path.StartsWith("/api/")) {
+                $nowSec = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+                if (-not $script:sessionExpired -and
+                    ($nowSec - $script:lastActivityTime) -gt $script:idleTimeoutSec) {
+                    try { Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null } catch { }
+                    $script:sessionExpired = $true
+                    Write-Host "  Session expired due to inactivity. Graph disconnected." -ForegroundColor Yellow
+                }
+                if ($script:sessionExpired) {
+                    $resp.StatusCode = 401
+                    $body   = '{"error":"Session expired due to inactivity. Please restart the script to sign in again.","expired":true}'
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                    $resp.OutputStream.Close()
+                    continue
+                }
+                # Authenticated, non-expired API call — record activity.
+                $script:lastActivityTime = $nowSec
+            }
+
+            # -- API: status (backend mode detection) ------------------
+            if ($path -eq "/api/status" -and ($req.HttpMethod -eq "GET" -or $req.HttpMethod -eq "HEAD")) {
+                $statusBody = '{"mode":"backend"}'
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($statusBody)
+                $resp.ContentType     = "application/json; charset=utf-8"
+                $resp.ContentLength64 = $buffer.Length
+                $resp.StatusCode      = 200
+                $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+            }
             # -- API: list groups ------------------------------------
-            if ($path -eq "/api/groups" -and $req.HttpMethod -eq "GET") {
+            elseif ($path -eq "/api/groups" -and $req.HttpMethod -eq "GET") {
                 $groups = @(Get-AllGroups)
                 $json   = ConvertTo-SafeJson -InputObject $groups -AsArray
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
@@ -501,6 +947,105 @@ try {
                 catch {
                     Write-Warning "Failed to fetch assigned group IDs: $($_.Exception.Message)"
                     $errBody = ConvertTo-Json -InputObject @{ error = "Failed to fetch assigned group IDs. Please try again." } -Compress
+                    $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 502
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+            }
+            # -- API: group parent groups (nested membership) ----------
+            elseif ($path -match "^/api/groups/([^/]+)/parents$" -and $req.HttpMethod -eq "GET") {
+                $groupId    = $Matches[1]
+                $parsedGuid = [System.Guid]::Empty
+                if (-not [System.Guid]::TryParse($groupId, [ref]$parsedGuid)) {
+                    $resp.StatusCode = 400
+                    $body   = '{"error":"Invalid group ID format. Expected a valid GUID."}'
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                    continue
+                }
+                $groupId = $parsedGuid.ToString()
+                try {
+                    $parents = @(Get-GroupParentGroups -GroupId $groupId)
+                    $json    = ConvertTo-SafeJson -InputObject $parents -AsArray
+                    $buffer  = [System.Text.Encoding]::UTF8.GetBytes($json)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 200
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+                catch {
+                    Write-Warning "Parent group fetch failed for $groupId : $($_.Exception.Message)"
+                    $errBody = ConvertTo-Json -InputObject @{ error = "Failed to fetch parent groups." } -Compress
+                    $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 502
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+            }
+            # -- API: nested group assignments -------------------------
+            elseif ($path -match "^/api/groups/([^/]+)/nested-assignments$" -and $req.HttpMethod -eq "GET") {
+                $groupId    = $Matches[1]
+                $parsedGuid = [System.Guid]::Empty
+                if (-not [System.Guid]::TryParse($groupId, [ref]$parsedGuid)) {
+                    $resp.StatusCode = 400
+                    $body   = '{"error":"Invalid group ID format. Expected a valid GUID."}'
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                    continue
+                }
+                $groupId = $parsedGuid.ToString()
+                try {
+                    $parents = @(Get-GroupParentGroups -GroupId $groupId)
+                    if ($parents.Count -gt 0) {
+                        $nestedResult = Get-NestedGroupAssignments -GroupId $groupId -ParentGroups $parents
+                    } else {
+                        $nestedResult = @{
+                            configurations  = @()
+                            settingsCatalog = @()
+                            applications    = @()
+                            scripts         = @()
+                            remediations    = @()
+                            _errors         = @{}
+                        }
+                    }
+                    $json   = ConvertTo-SafeJson -InputObject $nestedResult
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 200
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+                catch {
+                    Write-Warning "Nested assignment fetch failed for $groupId : $($_.Exception.Message)"
+                    $errBody = ConvertTo-Json -InputObject @{ error = "Failed to fetch nested assignments." } -Compress
+                    $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 502
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+            }
+            # -- API: orphaned items -----------------------------------
+            elseif ($path -eq "/api/orphaned-items" -and $req.HttpMethod -eq "GET") {
+                try {
+                    $orphanedResult = Get-OrphanedItems
+                    $json   = ConvertTo-SafeJson -InputObject $orphanedResult
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 200
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+                catch {
+                    Write-Warning "Orphaned items fetch failed: $($_.Exception.Message)"
+                    $errBody = ConvertTo-Json -InputObject @{ error = "Failed to fetch orphaned items." } -Compress
                     $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
                     $resp.ContentType     = "application/json; charset=utf-8"
                     $resp.ContentLength64 = $buffer.Length
@@ -622,8 +1167,10 @@ try {
             }
             # -- API: logout -----------------------------------------
             elseif ($path -eq "/api/logout" -and $req.HttpMethod -eq "POST") {
+                # Origin validation is handled globally above for all /api/* routes
                 try {
                     Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+                    $script:sessionExpired = $true
                     Write-Host "  User logged out via web UI." -ForegroundColor Yellow
                     $body   = '{"success":true,"message":"Disconnected from Microsoft Graph. Restart the script to sign in again."}'
                     $buffer = [System.Text.Encoding]::UTF8.GetBytes($body)
@@ -660,11 +1207,18 @@ try {
                 $relativePath = $path.Substring("/static/".Length).Replace("/", [System.IO.Path]::DirectorySeparatorChar)
                 $filePath     = Join-Path $staticRoot $relativePath
 
-                # Prevent directory traversal
+                # Prevent directory traversal. A raw StartsWith() on the
+                # resolved path can match sibling directories that share a
+                # prefix (e.g. C:\app\static-evil starts with C:\app\static)
+                # and ignores Windows case-insensitivity. Canonicalize and
+                # compare with a trailing separator using ordinal-ignore-case.
+                $dirSep       = [System.IO.Path]::DirectorySeparatorChar
                 $resolvedPath = [System.IO.Path]::GetFullPath($filePath)
-                $resolvedRoot = [System.IO.Path]::GetFullPath($staticRoot)
+                $resolvedRoot = [System.IO.Path]::GetFullPath($staticRoot).TrimEnd($dirSep) + $dirSep
 
-                if ($resolvedPath.StartsWith($resolvedRoot) -and (Test-Path $resolvedPath -PathType Leaf)) {
+                $withinRoot = $resolvedPath.StartsWith($resolvedRoot, [System.StringComparison]::OrdinalIgnoreCase)
+
+                if ($withinRoot -and (Test-Path $resolvedPath -PathType Leaf)) {
                     $ext  = [System.IO.Path]::GetExtension($resolvedPath).ToLower()
                     $mime = if ($mimeTypes.ContainsKey($ext)) { $mimeTypes[$ext] } else { "application/octet-stream" }
                     $bytes = [System.IO.File]::ReadAllBytes($resolvedPath)

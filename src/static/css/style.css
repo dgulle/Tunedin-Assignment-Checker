@@ -433,6 +433,27 @@ html, body {
     color: rgba(255, 255, 255, 0.7);
 }
 
+/* Sticky synthetic group list at sidebar bottom */
+.group-list-sticky {
+    list-style: none;
+    padding: 6px 12px 8px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.group-list-sticky .group-item-synthetic {
+    padding: 6px 10px;
+    margin-bottom: 2px;
+}
+
+.group-list-sticky .group-item-synthetic:last-child {
+    margin-bottom: 0;
+}
+
+.group-list-sticky .group-item-name {
+    font-size: 12px;
+}
+
 .group-list-separator {
     height: 1px;
     background: var(--border);
@@ -910,6 +931,51 @@ html, body {
     color: #fff;
 }
 
+/* ── Platform Filter ─────────────────────────────────────────────────────── */
+
+.platform-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.platform-filter-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-right: 4px;
+}
+
+.platform-btn {
+    padding: 5px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 20px;
+    background: var(--surface);
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.platform-btn:hover {
+    border-color: var(--primary-lighter);
+    color: var(--primary-light);
+    background: var(--surface-hover);
+}
+
+.platform-btn.active {
+    border-color: var(--primary);
+    background: var(--primary);
+    color: #fff;
+}
+
 /* ── Card Grid ───────────────────────────────────────────────────────────── */
 
 .card-grid {
@@ -1070,6 +1136,41 @@ html, body {
     color: #FCD34D;
 }
 
+.badge-inherited {
+    background: #E0E7FF;
+    color: #3730A3;
+}
+
+[data-theme="dark"] .badge-inherited {
+    background: #1E1B4B;
+    color: #A5B4FC;
+}
+
+.badge-orphaned {
+    background: #FEF3C7;
+    color: #92400E;
+}
+
+[data-theme="dark"] .badge-orphaned {
+    background: #422006;
+    color: #FCD34D;
+}
+
+.badge-platform {
+    background: #DBEAFE;
+    color: #1E40AF;
+}
+
+[data-theme="dark"] .badge-platform {
+    background: #1E3A5F;
+    color: #93C5FD;
+}
+
+/* Orphaned card styling */
+.orphaned-card::before {
+    background: linear-gradient(180deg, #F59E0B 0%, #EF4444 100%);
+}
+
 /* Category error banner */
 .category-error-banner {
     display: flex;
@@ -1160,6 +1261,41 @@ html, body {
     color: var(--text-muted);
     margin-left: 8px;
     font-weight: 400;
+}
+
+.modal-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.btn-copy-script {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-hover);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.btn-copy-script:hover {
+    background: var(--primary-pale);
+    border-color: var(--primary-lighter);
+    color: var(--primary);
+}
+
+.btn-copy-script.copied {
+    background: var(--primary-pale);
+    border-color: var(--primary-lighter);
+    color: var(--primary);
 }
 
 .btn-modal-close {
