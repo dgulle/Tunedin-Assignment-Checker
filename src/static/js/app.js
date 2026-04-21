@@ -946,6 +946,20 @@
             cardGrid.parentNode.insertBefore(banner, cardGrid);
         }
 
+        // "Orphaned" Groups are only orphaned from an Intune-assignment perspective.
+        // Warn before the user treats this list as safe-to-delete.
+        var existingGroupsNotice = document.getElementById("groupsScopeNotice");
+        if (existingGroupsNotice) existingGroupsNotice.remove();
+
+        if (activeCategory === "groups") {
+            var notice = document.createElement("div");
+            notice.id = "groupsScopeNotice";
+            notice.className = "category-info-banner";
+            notice.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>' +
+                '<span><strong>Heads up:</strong> &ldquo;Orphaned&rdquo; here means these groups have no Intune assignments. They may still be used elsewhere in Microsoft 365 (Exchange, SharePoint, Teams, licensing, Conditional Access, etc.). Review in the Entra admin center before deleting.</span>';
+            cardGrid.parentNode.insertBefore(notice, cardGrid);
+        }
+
         if (items.length === 0) {
             cardGrid.style.display     = "none";
             categoryEmpty.style.display = categoryError ? "none" : "flex";
