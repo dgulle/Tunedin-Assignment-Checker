@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($null = [System.Management.Automation.Language.Parser]::ParseFile\\(\"C:\\\\Github\\\\Tunedin-Assignment-Checker\\\\src\\\\TunedinAssignmentChecker.ps1\", [ref]$null, [ref]$errors\\); if \\($errors\\) { $errors | ForEach-Object { Write-Output $_.Message } } else { Write-Output \"OK: no syntax errors\" })",
+      "PowerShell(Out-Null *)",
+      "Bash(node --check \"C:\\\\Github\\\\Tunedin-Assignment-Checker\\\\src\\\\static\\\\js\\\\app.js\")",
+      "Bash(node --check \"C:\\\\Github\\\\Tunedin-Assignment-Checker\\\\src\\\\static\\\\js\\\\graph.js\")",
+      "Bash(git fetch *)",
+      "Bash(git update-index *)"
+    ]
+  }
+}

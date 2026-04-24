@@ -595,6 +595,90 @@ function Get-AssignedGroupIds {
     }
 }
 
+function Get-GroupMemberCounts {
+    <#
+    .SYNOPSIS
+        Returns a map of groupId -> member count for the supplied group IDs.
+        Uses the Graph /$batch endpoint to fetch up to 20 counts per request.
+        Groups that return a non-200 response are simply omitted from the map;
+        the caller treats a missing entry as "unknown" rather than zero.
+    #>
+    param([string[]]$GroupIds)
+
+    $counts = @{}
+    if (-not $GroupIds -or $GroupIds.Count -eq 0) { return $counts }
+
+    # De-dupe and validate GUIDs
+    $valid = @()
+    $seen  = @{}
+    foreach ($g in $GroupIds) {
+        if (-not $g) { continue }
+        $parsed = [System.Guid]::Empty
+        if ([System.Guid]::TryParse($g, [ref]$parsed)) {
+            $gid = $parsed.ToString()
+            if (-not $seen.ContainsKey($gid)) {
+                $seen[$gid] = $true
+                $valid += $gid
+            }
+        }
+    }
+
+    $batchSize = 20
+    for ($i = 0; $i -lt $valid.Count; $i += $batchSize) {
+        $end   = [Math]::Min($i + $batchSize - 1, $valid.Count - 1)
+        # Wrap in @() so a single-element slice still presents as an array.
+        $chunk = @($valid[$i..$end])
+
+        $requests = @()
+        for ($j = 0; $j -lt $chunk.Count; $j++) {
+            $requests += @{
+                id      = "$j"
+                method  = "GET"
+                url     = "/groups/$($chunk[$j])/members/`$count"
+                headers = @{ "ConsistencyLevel" = "eventual" }
+            }
+        }
+
+        $body = @{ requests = $requests } | ConvertTo-Json -Depth 5 -Compress
+        try {
+            $resp = Invoke-MgGraphRequest -Method POST -Uri "/v1.0/`$batch" -Body $body -ContentType "application/json" -OutputType PSObject
+        }
+        catch {
+            Write-Warning "Member count batch failed: $($_.Exception.Message)"
+            continue
+        }
+
+        $responses = Get-SafeValue $resp 'responses'
+        if (-not $responses) { continue }
+
+        foreach ($r in $responses) {
+            $idStr = Get-SafeValue $r 'id'
+            $idx   = 0
+            if (-not [int]::TryParse("$idStr", [ref]$idx)) { continue }
+            if ($idx -lt 0 -or $idx -ge $chunk.Count) { continue }
+
+            $status = Get-SafeValue $r 'status'
+            if ([int]$status -ne 200) { continue }
+
+            $rawBody = Get-SafeValue $r 'body'
+            $n       = 0
+            if ($rawBody -is [int] -or $rawBody -is [long]) {
+                $n = [int]$rawBody
+            }
+            elseif ($rawBody -is [string]) {
+                [void][int]::TryParse($rawBody, [ref]$n)
+            }
+            else {
+                # Sometimes batch wraps text/plain bodies — try coercion
+                [void][int]::TryParse("$rawBody", [ref]$n)
+            }
+            $counts[$chunk[$idx]] = $n
+        }
+    }
+
+    return $counts
+}
+
 function Get-AssignmentsByTargetType {
     param([string]$TargetOdataType)
 
@@ -1158,6 +1242,57 @@ try {
                 catch {
                     Write-Warning "Script content fetch failed for $scriptId : $($_.Exception.Message)"
                     $errBody = ConvertTo-Json -InputObject @{ error = "Failed to fetch script content. Please try again." } -Compress
+                    $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 502
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+            }
+            # -- API: group member counts (batch) --------------------
+            elseif ($path -eq "/api/group-member-counts" -and $req.HttpMethod -eq "POST") {
+                try {
+                    $reader  = New-Object System.IO.StreamReader($req.InputStream, $req.ContentEncoding)
+                    $rawBody = $reader.ReadToEnd()
+                    $reader.Close()
+
+                    $payload = $null
+                    if ($rawBody) {
+                        try { $payload = $rawBody | ConvertFrom-Json } catch { $payload = $null }
+                    }
+
+                    $idsInput = $null
+                    if ($payload -and ($payload.PSObject.Properties.Match('ids').Count)) {
+                        $idsInput = $payload.ids
+                    }
+
+                    if (-not $idsInput) {
+                        $resp.StatusCode = 400
+                        $errBody = '{"error":"Missing or invalid ids array in request body."}'
+                        $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
+                        $resp.ContentType     = "application/json; charset=utf-8"
+                        $resp.ContentLength64 = $buffer.Length
+                        $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                        continue
+                    }
+
+                    $idArray = @($idsInput | ForEach-Object { "$_" })
+                    # Cap the number of IDs per request to protect the backend
+                    if ($idArray.Count -gt 2000) {
+                        $idArray = $idArray[0..1999]
+                    }
+
+                    $counts = Get-GroupMemberCounts -GroupIds $idArray
+                    $json   = ConvertTo-Json -InputObject @{ counts = $counts } -Depth 10 -Compress
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
+                    $resp.ContentType     = "application/json; charset=utf-8"
+                    $resp.ContentLength64 = $buffer.Length
+                    $resp.StatusCode      = 200
+                    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+                }
+                catch {
+                    Write-Warning "Group member count fetch failed: $($_.Exception.Message)"
+                    $errBody = ConvertTo-Json -InputObject @{ error = "Failed to fetch group member counts." } -Compress
                     $buffer  = [System.Text.Encoding]::UTF8.GetBytes($errBody)
                     $resp.ContentType     = "application/json; charset=utf-8"
                     $resp.ContentLength64 = $buffer.Length

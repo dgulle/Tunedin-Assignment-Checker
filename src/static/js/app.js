@@ -53,6 +53,8 @@
     var allGroups          = [];
     var assignedGroupIds   = new Set();
     var groupAssignCounts  = {};   // groupId -> total assignment count
+    var groupMemberCounts  = {};   // groupId -> member count (populated lazily)
+    var memberCountsToken  = 0;    // invalidates in-flight fetches when groups reload
     var filterAssigned     = true;
     var filterMinCount     = 0;    // min assignment count filter (0 = no filter)
     var filterMaxCount     = 0;    // max assignment count filter (0 = no filter)
@@ -389,10 +391,20 @@
 
     // ── API helpers ─────────────────────────────────────────────────────
 
-    async function apiFetch(url) {
+    async function apiFetch(url, options) {
+        options = options || {};
         var headers = {};
+        // Merge caller-provided headers without mutating their object
+        if (options.headers) {
+            Object.keys(options.headers).forEach(function (k) { headers[k] = options.headers[k]; });
+        }
         if (_backendKey) headers["X-Backend-Key"] = _backendKey;
-        var resp = await fetch(url, { headers: headers });
+        var fetchInit = {
+            method: options.method || "GET",
+            headers: headers
+        };
+        if (options.body !== undefined) fetchInit.body = options.body;
+        var resp = await fetch(url, fetchInit);
         if (!resp.ok) {
             var body = await resp.json().catch(function () { return {}; });
             if (resp.status === 401 && body && body.expired) {
@@ -448,8 +460,14 @@
             }
             allGroups = groups;
             assignedGroupIds = new Set(Array.isArray(assignedIds) ? assignedIds : Object.keys(groupAssignCounts));
+            // Reset any previously-fetched counts so a reload doesn't show
+            // stale data while the new batch is in flight.
+            groupMemberCounts = {};
             renderGroupList();
             setConnection("connected", appMode === "spa" ? (GraphClient.getAccount()?.username || "Connected") : "Connected");
+            // Fetch member counts in the background — the list is already
+            // usable and counts stream in as batches complete.
+            loadGroupMemberCounts();
         } catch (err) {
             console.error("Failed to load groups:", err);
             sidebarErrorMsg.textContent = "Failed to load groups. " + (err.message || "Please check your connection and try again.");
@@ -497,6 +515,7 @@
             var groupType = getGroupType(g);
             var assignCount = groupAssignCounts[g.id] || 0;
             var gName = g.displayName || "Unnamed Group";
+            var memberBadge = buildMemberBadge(g.id);
 
             li.innerHTML =
                 '<div class="group-item-header">' +
@@ -507,6 +526,7 @@
                 '<div class="group-item-badges">' +
                     '<span class="group-item-type">' + escapeHtml(groupType) + '</span>' +
                     (assignCount > 0 ? '<span class="group-item-count" title="Total assignments">' + assignCount + ' assignment' + (assignCount !== 1 ? 's' : '') + '</span>' : '') +
+                    memberBadge +
                 '</div>';
 
             li.querySelector(".group-item-copy").appendChild(createCopyButton(function () { return gName; }));
@@ -552,6 +572,60 @@
         if (types.indexOf("DynamicMembership") !== -1) return "Dynamic";
         if (group.membershipRule) return "Dynamic";
         return "Assigned";
+    }
+
+    // ── Member count badge ──────────────────────────────────────────────
+    //
+    // Returns the HTML for a group's member-count badge. When the count
+    // hasn't been resolved yet we render a dimmed placeholder so users can
+    // see that counts are still loading instead of a blank space.
+
+    function buildMemberBadge(groupId) {
+        if (Object.prototype.hasOwnProperty.call(groupMemberCounts, groupId)) {
+            var n = groupMemberCounts[groupId];
+            var cls = "group-item-members" + (n === 0 ? " group-item-members-empty" : "");
+            var label = n + " member" + (n !== 1 ? "s" : "");
+            return '<span class="' + cls + '" title="Group members">' + label + '</span>';
+        }
+        return '<span class="group-item-members group-item-members-loading" title="Loading member count…">…</span>';
+    }
+
+    // Kick off background fetching of member counts for every loaded group.
+    // Uses a token to cancel stale fetches if the user reloads before this
+    // completes. We fetch for ALL groups so users can scroll the unfiltered
+    // list and still see counts; the Graph $batch endpoint keeps this
+    // reasonably cheap.
+
+    async function loadGroupMemberCounts() {
+        memberCountsToken += 1;
+        var myToken = memberCountsToken;
+        var ids = allGroups.map(function (g) { return g.id; }).filter(Boolean);
+        if (ids.length === 0) return;
+
+        function applyPartial(partial) {
+            if (myToken !== memberCountsToken) return;
+            Object.keys(partial).forEach(function (k) {
+                groupMemberCounts[k] = partial[k];
+            });
+            renderGroupList();
+        }
+
+        try {
+            if (appMode === "spa") {
+                await GraphClient.getGroupMemberCounts(ids, applyPartial);
+            } else {
+                // Backend fetches server-side in 20-group batches.
+                var data = await apiFetch("/api/group-member-counts", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ids: ids })
+                });
+                if (myToken !== memberCountsToken) return;
+                applyPartial((data && data.counts) || {});
+            }
+        } catch (err) {
+            console.warn("Failed to load member counts:", err);
+        }
     }
 
     // ── Group filter toggle ─────────────────────────────────────────────
@@ -1167,6 +1241,8 @@
             allGroups         = [];
             assignedGroupIds  = new Set();
             groupAssignCounts = {};
+            groupMemberCounts = {};
+            memberCountsToken += 1;
             activeGroupId     = null;
             assignmentData    = null;
             nestedData        = null;
@@ -1196,6 +1272,8 @@
                 allGroups         = [];
                 assignedGroupIds  = new Set();
                 groupAssignCounts = {};
+                groupMemberCounts = {};
+                memberCountsToken += 1;
                 activeGroupId     = null;
                 assignmentData    = null;
                 groupList.innerHTML    = "";

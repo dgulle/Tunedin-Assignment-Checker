@@ -249,6 +249,109 @@ var GraphClient = (function () {
         return groups;
     }
 
+    // ── Member count batch fetch (Graph $batch, up to 20 per request) ─────
+    //
+    // Takes an array of group IDs and returns { id: count } for each that
+    // responded 200. Dynamic groups that are still resolving may return 0.
+    // Calls onProgress(partialCounts) after each batch so the UI can update
+    // progressively instead of waiting for the full sweep.
+
+    async function getGroupMemberCounts(ids, onProgress) {
+        var counts = {};
+        if (!Array.isArray(ids) || ids.length === 0) return counts;
+
+        // Filter to valid GUIDs and de-dupe
+        var unique = [];
+        var seen = {};
+        for (var i = 0; i < ids.length; i++) {
+            var id = ids[i];
+            if (id && GUID_RE.test(id) && !seen[id]) {
+                seen[id] = true;
+                unique.push(id);
+            }
+        }
+
+        var BATCH_SIZE = 20;
+        var batches = [];
+        for (var j = 0; j < unique.length; j += BATCH_SIZE) {
+            batches.push(unique.slice(j, j + BATCH_SIZE));
+        }
+
+        for (var b = 0; b < batches.length; b++) {
+            var chunk = batches[b];
+            var requests = chunk.map(function (gid, idx) {
+                return {
+                    id: String(idx),
+                    method: "GET",
+                    url: "/groups/" + gid + "/members/$count",
+                    headers: { "ConsistencyLevel": "eventual" }
+                };
+            });
+
+            var token;
+            try {
+                token = await getToken();
+            } catch (e) {
+                console.warn("Member count batch aborted (auth):", e.message);
+                break;
+            }
+
+            var resp;
+            try {
+                resp = await fetch(GRAPH_BASE + "/v1.0/$batch", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": "Bearer " + token,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ requests: requests })
+                });
+            } catch (e) {
+                console.warn("Member count batch network error:", e.message);
+                continue;
+            }
+
+            if (!resp.ok) {
+                console.warn("Member count batch failed: HTTP " + resp.status);
+                continue;
+            }
+
+            var data = await resp.json().catch(function () { return null; });
+            if (!data || !Array.isArray(data.responses)) continue;
+
+            var batchCounts = {};
+            data.responses.forEach(function (r) {
+                var idx = parseInt(r.id, 10);
+                if (isNaN(idx) || idx < 0 || idx >= chunk.length) return;
+                var gid = chunk[idx];
+                if (r.status === 200) {
+                    // Batch responses wrap the /$count body; it may arrive as
+                    // a number, a numeric string, or (for text/plain) an
+                    // object with the raw value. Normalise all of them.
+                    var body = r.body;
+                    var n;
+                    if (typeof body === "number") {
+                        n = body;
+                    } else if (typeof body === "string") {
+                        n = parseInt(body, 10);
+                    } else {
+                        n = NaN;
+                    }
+                    if (!isNaN(n)) {
+                        counts[gid] = n;
+                        batchCounts[gid] = n;
+                    }
+                }
+            });
+
+            if (typeof onProgress === "function" && Object.keys(batchCounts).length) {
+                try { onProgress(batchCounts); } catch (e) { /* ignore */ }
+            }
+        }
+
+        return counts;
+    }
+
     function extractAssignment(assignment, groupId) {
         var target = assignment.target || {};
         var targetGroupId = target.groupId || null;
@@ -635,6 +738,7 @@ var GraphClient = (function () {
         isInitialised: isInitialised,
         getAccount: getAccount,
         getAllGroups: getAllGroups,
+        getGroupMemberCounts: getGroupMemberCounts,
         getAssignedGroupIds: getAssignedGroupIds,
         getAssignmentsForGroup: getAssignmentsForGroup,
         getAssignmentsByTargetType: getAssignmentsByTargetType,

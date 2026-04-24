@@ -491,6 +491,29 @@ html, body {
     color: var(--include-text);
 }
 
+.group-item-members {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--primary-pale);
+    color: var(--primary-light);
+}
+
+/* Highlight zero-member groups — these are the "orphan-assigned" groups
+   the user wants to spot quickly. */
+.group-item-members-empty {
+    background: var(--exclude-bg);
+    color: var(--exclude-text);
+}
+
+.group-item-members-loading {
+    background: transparent;
+    color: var(--text-muted);
+    font-weight: 400;
+}
+
 /* Count filter */
 .count-filter {
     padding: 0 20px 8px;
