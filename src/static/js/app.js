@@ -169,7 +169,11 @@
         document.getElementById("btnCountFilter").classList.remove("active");
         renderGroupList();
     });
-    document.getElementById("btnCountExport").addEventListener("click", exportFilteredGroupsCsv);
+    // Null-guarded: if this element is missing (e.g. cached old index.html)
+    // don't let a null throw abort the rest of init — that would break the
+    // setup screen's Sign In button wiring further down.
+    var _btnCountExport = document.getElementById("btnCountExport");
+    if (_btnCountExport) _btnCountExport.addEventListener("click", exportFilteredGroupsCsv);
 
     // All Devices / All Users toggles
     document.getElementById("btnShowAllDevices").addEventListener("click", function () {
