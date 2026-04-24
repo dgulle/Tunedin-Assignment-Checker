@@ -1094,7 +1094,10 @@
     function exportOrphanedCsv() {
         if (!orphanedData) return;
 
-        var rows = [["Category", "Name", "Description", "Platform / Group Type"]];
+        // Group ID column is populated for the "groups" category (orphaned
+        // groups have a real Graph ID worth keeping); blank for orphaned
+        // policies/apps/scripts since those IDs aren't group IDs.
+        var rows = [["Category", "Group ID", "Name", "Description", "Platform / Group Type"]];
 
         CATEGORIES.forEach(function (c) {
             var items = getFilteredOrphanedItems(c.key);
@@ -1102,6 +1105,7 @@
             items.forEach(function (item) {
                 rows.push([
                     label,
+                    c.key === "groups" ? exportableGroupId(item.id) : "",
                     item.displayName || "",
                     item.description || "",
                     c.key === "groups" ? (item.groupType || "") : (item.platform || "")
@@ -1186,6 +1190,18 @@
         badgeText.textContent = text;
     }
 
+    // ── CSV helpers ─────────────────────────────────────────────────────
+    //
+    // Synthetic group IDs (__allDevices__, __allUsers__, __orphaned__) are
+    // internal placeholders with no Graph-side equivalent — never write them
+    // to an export, leave the column blank instead.
+
+    function exportableGroupId(id) {
+        if (!id || typeof id !== "string") return "";
+        if (id.indexOf("__") === 0) return "";
+        return id;
+    }
+
     // ── Export the current filtered group list to CSV ──────────────────
     //
     // Dumps whatever the sidebar is currently showing — honours the search
@@ -1201,13 +1217,14 @@
             return;
         }
 
-        var rows = [["Group Name", "Group Type", "Number of Assignments", "Member Count"]];
+        var rows = [["Group ID", "Group Name", "Group Type", "Number of Assignments", "Member Count"]];
         filtered.forEach(function (g) {
             var assignCount = groupAssignCounts[g.id] || 0;
             var memberCount = Object.prototype.hasOwnProperty.call(groupMemberCounts, g.id)
                 ? groupMemberCounts[g.id]
                 : "";
             rows.push([
+                exportableGroupId(g.id),
                 g.displayName || "Unnamed Group",
                 getGroupType(g),
                 assignCount,
@@ -1259,13 +1276,16 @@
         if (!assignmentData) return;
 
         var groupName = selectedGroupName.textContent || "Group";
-        var rows = [["Category", "Name", "Description", "Platform", "Assignment Type", "Intent", "Filter Type", "Inherited From"]];
+        var groupIdCell = exportableGroupId(activeGroupId);
+        var rows = [["Group ID", "Group Name", "Category", "Name", "Description", "Platform", "Assignment Type", "Intent", "Filter Type", "Inherited From"]];
 
         CATEGORIES.forEach(function (c) {
             var items = getFilteredItems(c.key);
             var label = c.key.replace(/([A-Z])/g, " $1").replace(/^./, function (s) { return s.toUpperCase(); });
             items.forEach(function (item) {
                 rows.push([
+                    groupIdCell,
+                    groupName,
                     label,
                     item.displayName || "",
                     item.description || "",
