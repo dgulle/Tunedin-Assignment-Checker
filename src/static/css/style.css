@@ -569,7 +569,8 @@ html, body {
 }
 
 .count-filter-row input {
-    width: 70px;
+    flex: 1;
+    min-width: 0;
     padding: 5px 8px;
     border: 1.5px solid var(--border);
     border-radius: 4px;
@@ -593,8 +594,11 @@ html, body {
 
 /* Shared box sizing for all three action buttons. A solid 1px border is
    included in the base rule — variants override the color — so Apply
-   doesn't render shorter than Clear/Export and the row baseline-aligns. */
+   doesn't render shorter than Clear/Export and the row baseline-aligns.
+   flex: 1 stretches the trio edge-to-edge so there's no ragged trailing
+   space on the right side of the panel. */
 .btn-count-apply, .btn-count-clear, .btn-count-export {
+    flex: 1;
     padding: 5px 14px;
     border: 1px solid transparent;
     border-radius: 4px;
