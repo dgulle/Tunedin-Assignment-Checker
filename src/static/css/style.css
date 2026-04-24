@@ -591,7 +591,7 @@ html, body {
     margin-top: 8px;
 }
 
-.btn-count-apply, .btn-count-clear {
+.btn-count-apply, .btn-count-clear, .btn-count-export {
     padding: 5px 14px;
     border: none;
     border-radius: 4px;
@@ -619,6 +619,24 @@ html, body {
 
 .btn-count-clear:hover {
     background: var(--surface-hover);
+}
+
+.btn-count-export {
+    margin-left: auto;
+    background: var(--surface);
+    color: var(--primary);
+    border: 1px solid var(--primary-lighter);
+}
+
+.btn-count-export:hover {
+    background: var(--primary-pale);
+    border-color: var(--primary);
+}
+
+.btn-count-export:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--surface);
 }
 
 /* Sidebar loading / error */

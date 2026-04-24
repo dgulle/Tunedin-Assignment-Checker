@@ -169,6 +169,7 @@
         document.getElementById("btnCountFilter").classList.remove("active");
         renderGroupList();
     });
+    document.getElementById("btnCountExport").addEventListener("click", exportFilteredGroupsCsv);
 
     // All Devices / All Users toggles
     document.getElementById("btnShowAllDevices").addEventListener("click", function () {
@@ -478,9 +479,13 @@
         }
     }
 
-    // ── Render group list (with search filter) ──────────────────────────
+    // ── Filter logic shared by renderGroupList and the CSV exporter ─────
+    //
+    // Kept in one place so the sidebar list and the export always agree on
+    // which groups are "in view" — search box, assigned-only toggle, and
+    // the min/max assignment-count range are all applied here.
 
-    function renderGroupList() {
+    function getFilteredGroups() {
         var query = groupSearch.value.trim().toLowerCase();
         var filtered = allGroups;
 
@@ -488,7 +493,6 @@
             filtered = filtered.filter(function (g) { return assignedGroupIds.has(g.id); });
         }
 
-        // Assignment count range filter
         if (filterMinCount > 0 || filterMaxCount > 0) {
             filtered = filtered.filter(function (g) {
                 var cnt = groupAssignCounts[g.id] || 0;
@@ -504,6 +508,15 @@
                        (g.description || "").toLowerCase().indexOf(query) !== -1;
             });
         }
+
+        return filtered;
+    }
+
+    // ── Render group list (with search filter) ──────────────────────────
+
+    function renderGroupList() {
+        var query = groupSearch.value.trim().toLowerCase();
+        var filtered = getFilteredGroups();
 
         groupList.innerHTML = "";
 
@@ -1167,6 +1180,67 @@
     function setConnection(state, text) {
         badgeDot.className = "badge-dot " + state;
         badgeText.textContent = text;
+    }
+
+    // ── Export the current filtered group list to CSV ──────────────────
+    //
+    // Dumps whatever the sidebar is currently showing — honours the search
+    // box, assigned-only toggle, and the min/max assignment-count filter.
+    // Columns: Group Name, Group Type, Number of Assignments, Member Count.
+    // Member count is left blank for groups whose count hasn't loaded yet
+    // (rather than writing a misleading 0).
+
+    function exportFilteredGroupsCsv() {
+        var filtered = getFilteredGroups();
+        if (!filtered.length) {
+            alert("No groups match the current filter — nothing to export.");
+            return;
+        }
+
+        var rows = [["Group Name", "Group Type", "Number of Assignments", "Member Count"]];
+        filtered.forEach(function (g) {
+            var assignCount = groupAssignCounts[g.id] || 0;
+            var memberCount = Object.prototype.hasOwnProperty.call(groupMemberCounts, g.id)
+                ? groupMemberCounts[g.id]
+                : "";
+            rows.push([
+                g.displayName || "Unnamed Group",
+                getGroupType(g),
+                assignCount,
+                memberCount
+            ]);
+        });
+
+        var csv = rows.map(function (row) {
+            return row.map(function (cell) {
+                var s = String(cell).trim();
+                // Prevent CSV formula injection in Excel
+                if (/^[=+\-@\t\r]/.test(s)) {
+                    s = "'" + s;
+                }
+                s = s.replace(/"/g, '""');
+                return '"' + s + '"';
+            }).join(",");
+        }).join("\r\n");
+
+        var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+
+        // Tag filename with filter state so exports are self-describing.
+        var nameParts = ["groups"];
+        if (filterAssigned) nameParts.push("assigned");
+        if (filterMinCount > 0 || filterMaxCount > 0) {
+            nameParts.push("count-" + (filterMinCount || 0) + "-to-" + (filterMaxCount || "any"));
+        }
+        var stamp = new Date().toISOString().slice(0, 10);
+        a.download = nameParts.join("_") + "_" + stamp + ".csv";
+
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 
     // ── Export CSV ─────────────────────────────────────────────────────
