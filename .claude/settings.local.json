@@ -6,7 +6,8 @@
       "Bash(node --check \"C:\\\\Github\\\\Tunedin-Assignment-Checker\\\\src\\\\static\\\\js\\\\app.js\")",
       "Bash(node --check \"C:\\\\Github\\\\Tunedin-Assignment-Checker\\\\src\\\\static\\\\js\\\\graph.js\")",
       "Bash(git fetch *)",
-      "Bash(git update-index *)"
+      "Bash(git update-index *)",
+      "Bash(git rm *)"
     ]
   }
 }

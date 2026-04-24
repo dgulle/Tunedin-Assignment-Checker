@@ -29,12 +29,19 @@ jobs:
 
       # Stage only the files the SPA actually needs on Pages. Avoids shipping
       # CLAUDE.md, README internals, .github, or anything added later by
-      # accident. Paths mirror the references in the root index.html.
+      # accident.
+      #
+      # Single source of truth: src/templates/index.html is what the PowerShell
+      # backend serves. It references "/static/..." because the backend routes
+      # that prefix. GitHub Pages has no such routing, so we rewrite the asset
+      # paths to "src/static/..." as we copy the template into _site/. Keep
+      # this in sync with the backend route handler's prefix — if that ever
+      # changes, this sed pattern must change too.
       - name: Stage site
         run: |
           set -euo pipefail
           mkdir -p _site/src/static
-          cp index.html _site/
+          sed -e 's|="/static/|="src/static/|g' src/templates/index.html > _site/index.html
           cp -r src/static/css _site/src/static/css
           cp -r src/static/js  _site/src/static/js
           if [ -d src/static/img ]; then
@@ -42,6 +49,14 @@ jobs:
           fi
           echo "tunedin.zerototrust.tech" > _site/CNAME
           touch _site/.nojekyll
+
+          # Fail loudly if the rewrite missed anything — otherwise Pages would
+          # silently 404 on assets. The only "/static/" strings that should
+          # remain are in comments or CSP connect-src (none today).
+          if grep -nE '="/static/' _site/index.html; then
+            echo "ERROR: _site/index.html still contains absolute /static/ paths" >&2
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1

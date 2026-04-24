@@ -12,9 +12,10 @@
          Prefix the output with "sha384-" and test redirect + silent token flows
          (sign-in, sign-out, token refresh after expiry) before committing. -->
     <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@4.30.0/lib/msal-browser.min.js" integrity="sha384-RGxxfG5yRS8DLU7ZJ8OoLhbV/BsJFHyPuMVHrTLbpj3t5Z15LnviJmaznKY/a7LZ" crossorigin="anonymous"></script>
-    <!-- Framebuster: defence-in-depth for environments where frame-ancestors
-         cannot be delivered as a response header. The PowerShell backend also
-         sends X-Frame-Options: DENY. -->
+    <!-- Framebuster: <meta> CSP does not enforce frame-ancestors (browsers only
+         honor it as an HTTP response header). For GitHub Pages we cannot set
+         response headers, so break out of any frame as a defence-in-depth step.
+         The PowerShell backend additionally sends X-Frame-Options: DENY. -->
     <script>
         if (window.top !== window.self) {
             try { window.top.location = window.self.location; }
@@ -255,6 +256,16 @@
                         Groups
                         <span class="tab-count" id="countGroups">0</span>
                     </button>
+                </div>
+
+                <!-- Platform filter (orphaned items only) -->
+                <div class="platform-filter" id="platformFilter" style="display:none">
+                    <span class="platform-filter-label">Platform:</span>
+                    <button class="platform-btn active" data-platform="">All</button>
+                    <button class="platform-btn" data-platform="Android">Android</button>
+                    <button class="platform-btn" data-platform="iOS">iOS</button>
+                    <button class="platform-btn" data-platform="Windows">Windows</button>
+                    <button class="platform-btn" data-platform="macOS">macOS</button>
                 </div>
 
                 <!-- Assignment cards -->
