@@ -591,9 +591,12 @@ html, body {
     margin-top: 8px;
 }
 
+/* Shared box sizing for all three action buttons. A solid 1px border is
+   included in the base rule — variants override the color — so Apply
+   doesn't render shorter than Clear/Export and the row baseline-aligns. */
 .btn-count-apply, .btn-count-clear, .btn-count-export {
     padding: 5px 14px;
-    border: none;
+    border: 1px solid transparent;
     border-radius: 4px;
     font-size: 11px;
     font-weight: 600;
@@ -604,37 +607,38 @@ html, body {
 
 .btn-count-apply {
     background: var(--primary);
+    border-color: var(--primary);
     color: #fff;
 }
 
 .btn-count-apply:hover {
     background: var(--primary-dark);
+    border-color: var(--primary-dark);
 }
 
 .btn-count-clear {
     background: var(--surface);
+    border-color: var(--border);
     color: var(--text-secondary);
-    border: 1px solid var(--border);
 }
 
 .btn-count-clear:hover {
     background: var(--surface-hover);
 }
 
-/* Export sits to the right of Clear inside the count-filter panel.
-   margin-left: auto pushes it to the far right so the row reads as
-   [Apply][Clear] ————— [Export]. Outlined primary style marks it as a
-   secondary action distinct from Apply's filled primary. */
+/* Export uses the same neutral-default/primary-on-hover recipe as the
+   canonical .btn-export above the main content (style.css:898) so the two
+   export affordances feel like the same component across the app. */
 .btn-count-export {
-    margin-left: auto;
     background: var(--surface);
-    color: var(--primary);
-    border: 1px solid var(--primary-lighter);
+    border-color: var(--border);
+    color: var(--text-secondary);
 }
 
 .btn-count-export:hover {
     background: var(--primary-pale);
-    border-color: var(--primary);
+    border-color: var(--primary-lighter);
+    color: var(--primary);
 }
 
 .btn-count-export:disabled {
