@@ -591,7 +591,7 @@ html, body {
     margin-top: 8px;
 }
 
-.btn-count-apply, .btn-count-clear, .btn-count-export {
+.btn-count-apply, .btn-count-clear {
     padding: 5px 14px;
     border: none;
     border-radius: 4px;
@@ -621,11 +621,39 @@ html, body {
     background: var(--surface-hover);
 }
 
+/* Toolbar row that keeps the filter button and the export button side-by-
+   side above the collapsible count-filter panel. The filter button grows
+   to take leftover space so the layout stays balanced even when the
+   sidebar narrows. */
+.count-filter-toolbar {
+    display: flex;
+    gap: 6px;
+    align-items: stretch;
+}
+
+.count-filter-toolbar .btn-count-filter {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Export button when placed in the toolbar — matches the filter button's
+   height/padding but uses an outlined primary style so it reads as a
+   secondary action. */
 .btn-count-export {
-    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    border: 1.5px solid var(--primary-lighter);
+    border-radius: var(--radius-sm);
     background: var(--surface);
     color: var(--primary);
-    border: 1px solid var(--primary-lighter);
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
 }
 
 .btn-count-export:hover {
@@ -636,7 +664,6 @@ html, body {
 .btn-count-export:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-    background: var(--surface);
 }
 
 /* Sidebar loading / error */
